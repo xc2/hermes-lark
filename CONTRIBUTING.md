@@ -24,6 +24,9 @@ Supported versions are Python 3.11 through 3.13 and Node.js 22 or newer.
 python -m venv .venv
 . .venv/bin/activate
 python -m pip install --upgrade pip
+git clone --filter=blob:none https://github.com/NousResearch/hermes-agent.git ../hermes-agent
+git -C ../hermes-agent checkout --detach cc4cab2f592e60a197e796506de9168f74baf3ea
+python -m pip install -e ../hermes-agent
 python -m pip install -e '.[dev]'
 ```
 

@@ -44,7 +44,7 @@ The current compatibility baseline is
 ## Requirements
 
 - Python 3.11 through 3.13
-- Hermes Agent `>=0.19.0,<0.20.0`
+- Hermes Agent `>=0.19.1,<0.20.0`
 - Node.js 22 or newer
 - A published Feishu or Lark self-built application with bot capability
 
@@ -296,6 +296,9 @@ rules are in [`tests/e2e/README.md`](https://github.com/xc2/hermes-lark/blob/mai
 Install development dependencies and run the offline suite:
 
 ```bash
+git clone --filter=blob:none https://github.com/NousResearch/hermes-agent.git ../hermes-agent
+git -C ../hermes-agent checkout --detach cc4cab2f592e60a197e796506de9168f74baf3ea
+python -m pip install -e ../hermes-agent
 python -m pip install -e '.[dev]'
 python -m ruff check .
 python scripts/check_english.py

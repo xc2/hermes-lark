@@ -42,7 +42,14 @@ jobs:
           node-version: "22"
 
       - name: Install project
-        run: python -m pip install --upgrade pip && python -m pip install -e '.[dev]'
+        run: |
+          python -m pip install --upgrade pip
+          git init "$RUNNER_TEMP/hermes-agent"
+          git -C "$RUNNER_TEMP/hermes-agent" remote add origin https://github.com/NousResearch/hermes-agent.git
+          git -C "$RUNNER_TEMP/hermes-agent" fetch --depth=1 origin cc4cab2f592e60a197e796506de9168f74baf3ea
+          git -C "$RUNNER_TEMP/hermes-agent" checkout --detach FETCH_HEAD
+          python -m pip install -e "$RUNNER_TEMP/hermes-agent"
+          python -m pip install -e '.[dev]'
 
       - name: Check repository policy
         run: |
