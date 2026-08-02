@@ -1,0 +1,212 @@
+{
+  "format_version": 3,
+  "upstream": {
+    "repository": "https://github.com/larksuite/openclaw-lark",
+    "commit": "dde0be3680d6fd5443cab426c8f4b3216266346a"
+  },
+  "plugin_manifest": {
+    "name": "feishu-platform",
+    "kind": "platform",
+    "required_env": [
+      "FEISHU_APP_ID",
+      "FEISHU_APP_SECRET"
+    ],
+    "optional_env": [
+      "FEISHU_DOMAIN",
+      "FEISHU_CONNECTION_MODE",
+      "FEISHU_ALLOWED_USERS",
+      "FEISHU_ALLOW_ALL_USERS",
+      "FEISHU_GROUP_POLICY",
+      "FEISHU_ALLOW_BOTS",
+      "FEISHU_REQUIRE_MENTION",
+      "FEISHU_HOME_CHANNEL"
+    ]
+  },
+  "tools": {
+    "structural_schema_sha256": {
+      "feishu_get_user": "f1973d4474dfb1a738daa9f10a3f4e900e31687bb444553a048037fd3b4b2fb4",
+      "feishu_search_user": "7aeae3884939f021514e1c33bac5b0d3c3dcf3c9bcb5d075e6f6f296f7901f32",
+      "feishu_chat": "65eee261f614c2a6fb72f7256ec24ab66201df23b125fd5924c026121fba917c",
+      "feishu_chat_members": "8a43889a6389c4c19efadfa754baf32b416ad41efc4128aab072c480ca404db8",
+      "feishu_im_user_message": "7923423102d5d7f6fbf7303b8cfbc25d1f06c2e4584b426c2cfe2845ba931792",
+      "feishu_im_user_fetch_resource": "882d0a000168dbfc19a8703dcb1561be8d040bada13ab139d4ba9c235fe23afd",
+      "feishu_im_user_get_messages": "e54ac02751d92ab1d7f431d23b6316f52b3dabf79590f29dc2fad2f208a37311",
+      "feishu_im_user_get_thread_messages": "933d4bdde8ef7946d994e0a4d3800b9b5c823fa55e2035c8a9e49b80b43668bc",
+      "feishu_im_user_search_messages": "4de9d4b59deec0faa7d33a6c5f93ea2db11a009e8b96637dacb5d26215dd0823",
+      "feishu_calendar_calendar": "03512ea4910a95fa863c2049103c84293045287e791485882d14c433b532db4d",
+      "feishu_calendar_event": "50d9016815aede52a6d7f2e234596160fd4bc0a5c9aec6cbfdf47171a6519668",
+      "feishu_calendar_event_attendee": "db02b28dfc0f4927541aaefbc143687c79f3941cfebdfe370e76c23f144b9773",
+      "feishu_calendar_freebusy": "3ebb06f98050399d2e5c43b02939a1b404c986fe635d60f0366d1a9cbaaa50c6",
+      "feishu_task_task": "3c769eb5a81c3a3b0f3034bb49d5dad0d16a70ca6f5085faa5919dee46f1a292",
+      "feishu_task_tasklist": "014cd551bd988a3fbb1d0526b376e3ba96acb43da4f4fd9b794d1fbebf0ee012",
+      "feishu_task_attachment": "7eab9bdef45f324da2d282b3b075b4170224032a07923d3dcb6b188682f79453",
+      "feishu_task_section": "4b346b31cba56d876a0c96e1aa44a9ebf032aa605b30dd3fd39e96984cc089b2",
+      "feishu_task_comment": "50b11350df23b23623b4743c50edf473bc500dffa22ee9872c7833e51e489f67",
+      "feishu_task_subtask": "54927efaf74cb16839ec6e33681f836efaf26d882e653a9d907b6cc4f030981b",
+      "feishu_task_agent": "2112ffd120140e422fc52231047da25a26c87c9f70dc2c0a37202bf198079381",
+      "feishu_bitable_app": "4e8c882f37b9bb5bc602f5be05028f13b1ae5c9ca62e5a48d8ace7f7f14b91db",
+      "feishu_bitable_app_table": "37d87431a363872e4811679e794ec8d879e0fc865a325fb88e1a4fec5928dc31",
+      "feishu_bitable_app_table_record": "c2bfd149cc4cb186299bd4aec5036f851599743858926017dfc265a2e8507742",
+      "feishu_bitable_app_table_field": "aa87e1c80d00e5c8eb05b2f0cf53413ed7c5f9d54c6843f08cbcb3f74d3bc2ac",
+      "feishu_bitable_app_table_view": "dcde917f47b13c058eba85dab85da810a0a5bb7ac0564890802e9b27e68280ad",
+      "feishu_search_doc_wiki": "ade9d1a13ebc35d5db6532416b503d511a30fc4b236bffe7e759d08d80ac310e",
+      "feishu_drive_file": "e4a1b78f15ae92d0ca89c777a0d30c1e2e54efb44806ee24189163ab1b0f67f3",
+      "feishu_doc_comments": "d3606879d695857c0a5060d1e39798194af6ab132115cbab87424ed39f7deeaa",
+      "feishu_doc_media": "45822d3830c6319e85636481dd93c9d68fc6c16e17261daf11678fdb23a70132",
+      "feishu_wiki_space": "50b204d5a7a2228a72e1c832989d8ed75542f4e709457ea707c19f564f9683cf",
+      "feishu_wiki_space_node": "932660cfcfc013f67b15e7d5aa2434c8b269db16b7c97afbd99faf77464998ba",
+      "feishu_sheet": "8d011f0708a60816608f926251a5daa7ebcabba18215befc43041da4b14655ca",
+      "feishu_im_bot_image": "f6d31b15cc582faec08ca4594a477199144b60491b0da8940c05328a61bd3413",
+      "feishu_fetch_doc": "7f638e9c9d95768105e83bd8ca586c9cc07e4688048aa14914afeff3b3a330dd",
+      "feishu_create_doc": "4e2d20cd5c67b2ebc5c8670629354d8067b093fc70b7837a16e9f8d3db50cfb4",
+      "feishu_update_doc": "22f1c45c143331a17d2492629a6bb01a3e474ee037eb16fc466c520b73202fdf",
+      "feishu_oauth": "f0504b3234cf667a7bcd79f88b15f44d92791fabf37228f2a6215eee67c96140",
+      "feishu_oauth_batch_auth": "4feb2b683b216f2f0ff4d6c0b8d6013c4951ac894a48f588507b2f16ce2e3782",
+      "feishu_ask_user_question": "3415a2b0c00eb245a4714a93a42d34139533148ffc3d6ef20de64cb0e50329f6"
+    }
+  },
+  "skills": [
+    "feishu-bitable",
+    "feishu-calendar",
+    "feishu-channel-rules",
+    "feishu-create-doc",
+    "feishu-fetch-doc",
+    "feishu-im-read",
+    "feishu-task",
+    "feishu-troubleshoot",
+    "feishu-update-doc"
+  ],
+  "adapter": {
+    "env_defaults": {
+      "FEISHU_CONNECTION_MODE": "websocket",
+      "FEISHU_GROUP_POLICY": "open",
+      "FEISHU_ALLOW_BOTS": "mentions",
+      "FEISHU_REQUIRE_MENTION": "true"
+    },
+    "constants": {
+      "_DEFAULT_DEDUP_CACHE_SIZE": 5000,
+      "_FEISHU_DEDUP_TTL_SECONDS": 43200
+    },
+    "sdk_callbacks": [
+      "register_p2_im_message_message_read_v1",
+      "register_p2_im_message_receive_v1",
+      "register_p2_im_message_reaction_created_v1",
+      "register_p2_im_message_reaction_deleted_v1",
+      "register_p2_card_action_trigger",
+      "register_p2_im_chat_member_bot_added_v1",
+      "register_p2_im_chat_member_bot_deleted_v1",
+      "register_p2_im_chat_access_event_bot_p2p_chat_entered_v1",
+      "register_p2_im_message_recalled_v1"
+    ],
+    "custom_events": [
+      "drive.notice.comment_add_v1",
+      "vc.bot.meeting_invited_v1"
+    ]
+  },
+  "skill_files_upstream_sha256": {
+    "skills/feishu-bitable/SKILL.md": "33d864153124c85f33b758faee0c684ad9448b6d2cab79b7a9731ca805a0044c",
+    "skills/feishu-bitable/references/examples.md": "cfa108d46506c620e67835ce45be2c55e10da70ef1318aa9c02060775698246f",
+    "skills/feishu-bitable/references/field-properties.md": "bd87f1a142dc010f7ebc384d6344e658d40e4f625ba39982d6d3b85a265754d0",
+    "skills/feishu-bitable/references/record-values.md": "348b38218bb3c17ff5c12cd9d8f4aae1096df2a1972487b6297eb03808810de1",
+    "skills/feishu-calendar/SKILL.md": "98d11afa39cbe2f7ebe6e8416658582e7c0b9c404695c817d54398b23bbcaa00",
+    "skills/feishu-channel-rules/SKILL.md": "e7197f146a7e7c69645639bf508aeca1ec8198d5f958178efd479d6dbf88f69b",
+    "skills/feishu-channel-rules/references/markdown-syntax.md": "b6ed7c0cb144afa3e792d3f5ff15a6bacb7196652c399c52fdde16173bb2a3b7",
+    "skills/feishu-create-doc/SKILL.md": "54c48e32dbc59d9559286aed42bd9007b364bc2666753335dc8e9390a54eaa14",
+    "skills/feishu-fetch-doc/SKILL.md": "5c43b2045f078cc8eb04afb2a79756ad5cf666fa43b3c4209032a2dd9a20ffb0",
+    "skills/feishu-im-read/SKILL.md": "8dba4d9fc35b421db0b607c9a9a25d81e6690a030a52529932ff8e6e0c0ed265",
+    "skills/feishu-task/SKILL.md": "b0ea996965ab1330d43a3206ed5f91977dd14e4efc7d8e7d4dcf9fb633c4fcdc",
+    "skills/feishu-troubleshoot/SKILL.md": "6f0e43bc7958ec37ae01d484a68f398ac79519cf89ac2483f33d446d278b5df0",
+    "skills/feishu-update-doc/SKILL.md": "88290c8674d0d63b313e50b1ac1f6b9a370eb0ab7f94d26e92794c4031acbae7"
+  },
+  "generated_bridge": {
+    "path": "hermes_lark/node/openclaw_tools_bridge.mjs",
+    "sha256": "f7938a09724b76e79a7cea9aaf74f3cdc19b4a149d3ee0a1de6ed636169ad7ec"
+  },
+  "skill_upstream_references": {
+    "feishu-bitable": [
+      "feishu_bitable_app",
+      "feishu_bitable_app_table",
+      "feishu_bitable_app_table_field",
+      "feishu_bitable_app_table_record",
+      "feishu_bitable_app_table_view",
+      "feishu_drive_media"
+    ],
+    "feishu-calendar": [
+      "feishu_calendar_event",
+      "feishu_calendar_event_attendee",
+      "feishu_calendar_freebusy"
+    ],
+    "feishu-channel-rules": [],
+    "feishu-create-doc": [
+      "feishu_doc_media",
+      "feishu_mcp_create_doc"
+    ],
+    "feishu-fetch-doc": [
+      "feishu_bitable_",
+      "feishu_doc_media",
+      "feishu_mcp_fetch_doc",
+      "feishu_sheet",
+      "feishu_wiki_space_node"
+    ],
+    "feishu-im-read": [
+      "feishu_im_user_fetch_resource",
+      "feishu_im_user_get_messages",
+      "feishu_im_user_get_thread_messages",
+      "feishu_im_user_search_messages"
+    ],
+    "feishu-task": [
+      "feishu_task_agent",
+      "feishu_task_attachment",
+      "feishu_task_task",
+      "feishu_task_tasklist"
+    ],
+    "feishu-troubleshoot": [
+      "feishu_doctor"
+    ],
+    "feishu-update-doc": []
+  },
+  "skill_runtime_references": {
+    "feishu-bitable": [
+      "feishu_bitable_app",
+      "feishu_bitable_app_table",
+      "feishu_bitable_app_table_field",
+      "feishu_bitable_app_table_record",
+      "feishu_bitable_app_table_view"
+    ],
+    "feishu-calendar": [
+      "feishu_calendar_event",
+      "feishu_calendar_event_attendee",
+      "feishu_calendar_freebusy"
+    ],
+    "feishu-channel-rules": [],
+    "feishu-create-doc": [
+      "feishu_create_doc",
+      "feishu_doc_media"
+    ],
+    "feishu-fetch-doc": [
+      "feishu_bitable_",
+      "feishu_doc_media",
+      "feishu_fetch_doc",
+      "feishu_sheet",
+      "feishu_wiki_space_node"
+    ],
+    "feishu-im-read": [
+      "feishu_im_user_fetch_resource",
+      "feishu_im_user_get_messages",
+      "feishu_im_user_get_thread_messages",
+      "feishu_im_user_search_messages"
+    ],
+    "feishu-task": [
+      "feishu_task_agent",
+      "feishu_task_attachment",
+      "feishu_task_task",
+      "feishu_task_tasklist"
+    ],
+    "feishu-troubleshoot": [
+      "feishu_doctor"
+    ],
+    "feishu-update-doc": [
+      "feishu_update_doc"
+    ]
+  }
+}

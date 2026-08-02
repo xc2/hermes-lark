@@ -1,0 +1,86 @@
+name: Bug report
+description: Report a reproducible defect in hermes-lark.
+title: "[Bug]: "
+labels:
+  - bug
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Do not include application secrets, tokens, OAuth codes, message bodies,
+        document content, session databases, or unredacted logs. Report security
+        issues privately through the repository Security tab.
+
+  - type: input
+    id: version
+    attributes:
+      label: Version or commit
+      placeholder: 0.1.0 or a full commit SHA
+    validations:
+      required: true
+
+  - type: dropdown
+    id: domain
+    attributes:
+      label: Service
+      options:
+        - Feishu
+        - Lark
+    validations:
+      required: true
+
+  - type: dropdown
+    id: surface
+    attributes:
+      label: Affected surface
+      options:
+        - Gateway connection
+        - Thread or session routing
+        - CardKit
+        - OAuth or permissions
+        - Tool
+        - Media
+        - Group or DM policy
+        - Packaging or installation
+        - Other
+    validations:
+      required: true
+
+  - type: textarea
+    id: description
+    attributes:
+      label: Description
+      description: Explain the defect and its user-visible impact.
+    validations:
+      required: true
+
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Sanitized reproduction
+      description: Provide the smallest sequence that reproduces the problem.
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+    validations:
+      required: true
+
+  - type: textarea
+    id: diagnostics
+    attributes:
+      label: Sanitized diagnostics
+      description: Include only redacted error codes, versions, and relevant log lines.
+
+  - type: checkboxes
+    id: safety
+    attributes:
+      label: Safety confirmation
+      options:
+        - label: I removed credentials, personal data, message content, and document content.
+          required: true
+        - label: This is not a security vulnerability requiring private disclosure.
+          required: true

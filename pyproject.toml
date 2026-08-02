@@ -1,0 +1,93 @@
+[build-system]
+requires = ["hatchling==1.27.0"]
+build-backend = "hatchling.build"
+
+[project]
+name = "hermes-lark"
+version = "0.1.0"
+description = "Feishu/Lark platform plugin for Hermes Agent"
+readme = "README.md"
+requires-python = ">=3.11,<3.14"
+license = "MIT"
+license-files = ["LICENSE", "NOTICE"]
+authors = [
+  { name = "hermes-lark contributors" },
+]
+keywords = ["agent", "feishu", "hermes-agent", "lark", "plugin"]
+classifiers = [
+  "Development Status :: 3 - Alpha",
+  "Environment :: Console",
+  "License :: OSI Approved :: MIT License",
+  "Operating System :: OS Independent",
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3.11",
+  "Programming Language :: Python :: 3.12",
+  "Programming Language :: Python :: 3.13",
+  "Topic :: Communications :: Chat",
+]
+dependencies = [
+  "hermes-agent>=0.19.0,<0.20.0",
+  "aiohttp==3.14.1",
+  "lark-oapi==1.6.8",
+  "qrcode==7.4.2",
+  "requests-toolbelt==1.0.0",
+  "websockets==15.0.1",
+]
+
+[project.optional-dependencies]
+dev = [
+  "build>=1.2,<2",
+  "PyYAML>=6,<7",
+  "ruff>=0.9,<1",
+  "twine>=6,<7",
+]
+
+[project.urls]
+Changelog = "https://github.com/xc2/hermes-lark/blob/main/CHANGELOG.md"
+Documentation = "https://github.com/xc2/hermes-lark#readme"
+Issues = "https://github.com/xc2/hermes-lark/issues"
+Source = "https://github.com/xc2/hermes-lark"
+
+[project.entry-points."hermes_agent.plugins"]
+"platforms/feishu" = "hermes_lark"
+
+[tool.hatch.build.targets.sdist]
+include = [
+  "/.dockerignore",
+  "/.env.example",
+  "/CHANGELOG.md",
+  "/CODE_OF_CONDUCT.md",
+  "/CONTRIBUTING.md",
+  "/Dockerfile",
+  "/LICENSE",
+  "/NOTICE",
+  "/README.md",
+  "/SECURITY.md",
+  "/THIRD_PARTY_NOTICES.md",
+  "/__init__.py",
+  "/compose.validation.yaml",
+  "/docs",
+  "/hermes_lark",
+  "/permissions",
+  "/plugin.yaml",
+  "/pyproject.toml",
+  "/scripts",
+  "/skills",
+  "/tests",
+]
+
+[tool.hatch.build.targets.wheel]
+packages = ["hermes_lark"]
+
+[tool.hatch.build.targets.wheel.force-include]
+"skills" = "hermes_lark/skills"
+"permissions" = "hermes_lark/permissions"
+"plugin.yaml" = "hermes_lark/plugin.yaml"
+"THIRD_PARTY_NOTICES.md" = "hermes_lark/THIRD_PARTY_NOTICES.md"
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["F"]

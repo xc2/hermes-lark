@@ -1,0 +1,6 @@
+* text=auto eol=lf
+
+*.bat text eol=crlf
+*.cmd text eol=crlf
+
+hermes_lark/node/openclaw_tools_bridge.mjs linguist-generated=true

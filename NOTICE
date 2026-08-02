@@ -1,0 +1,20 @@
+hermes-lark
+===========
+
+This distribution contains work derived from:
+
+- larksuite/openclaw-lark, copyright 2026 Lark Technologies Pte. Ltd.,
+  distributed under the MIT License.
+- NousResearch/hermes-agent, copyright 2025 Nous Research, including the
+  Feishu/Lark platform adapter, distributed under the MIT License.
+
+The corresponding copyright notices and license terms are reproduced in
+LICENSE.
+
+The generated Node bridge contains additional third-party software. Its
+complete component inventory and license texts are reproduced in
+THIRD_PARTY_NOTICES.md.
+
+This is an independent community project. It is not affiliated with or
+endorsed by Lark Technologies, ByteDance, or Nous Research. Feishu and Lark
+names and marks belong to their respective owners.

@@ -1,0 +1,54 @@
+services:
+  gateway:
+    build:
+      context: .
+      args:
+        HERMES_AGENT_IMAGE: ${HERMES_AGENT_IMAGE:-nousresearch/hermes-agent@sha256:f59eb17c55f90409bb805525b7c2bd12dcd61355ebd3d2604272bed5dc597b67}
+    image: hermes-lark:validation
+    command:
+      - gateway
+      - run
+      - --no-supervise
+    stop_grace_period: 30s
+    environment:
+      FEISHU_E2E_USER_ACCESS_TOKEN_FILE: /opt/secrets/user-access-token
+      FEISHU_REACTIONS: "true"
+      HERMES_ALLOW_PRIVATE_URLS: "true"
+      HERMES_HUMAN_DELAY_MODE: "off"
+      HERMES_PLUGINS_DEBUG: "1"
+    env_file:
+      - path: ./.env
+        required: false
+    volumes:
+      - type: bind
+        source: ./.hermes-validation
+        target: /opt/data
+        bind:
+          create_host_path: false
+      - type: bind
+        source: ./.hermes-secrets
+        target: /opt/secrets
+        bind:
+          create_host_path: false
+    depends_on:
+      model-stub:
+        condition: service_healthy
+
+  model-stub:
+    image: hermes-lark:validation
+    entrypoint:
+      - /opt/hermes/.venv/bin/python
+      - /opt/hermes-lark/tests/e2e/openai_stub.py
+    environment:
+      HERMES_E2E_STUB_PORT: "8000"
+    expose:
+      - "8000"
+    healthcheck:
+      test:
+        - CMD
+        - /opt/hermes/.venv/bin/python
+        - -c
+        - import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health', timeout=2).read()
+      interval: 2s
+      timeout: 3s
+      retries: 10

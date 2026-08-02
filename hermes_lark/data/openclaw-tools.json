@@ -1,0 +1,4855 @@
+{
+  "channels": [
+    "feishu"
+  ],
+  "tools": [
+    {
+      "name": "feishu_get_user",
+      "label": "Feishu: Get User Info",
+      "description": "Get user information. If user_id is omitted, get the current user's information; otherwise, get the specified user's information. Returns details such as the user's name, avatar, email address, phone number, and department.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "user_id": {
+            "description": "User ID (for example, ou_xxx). Omit it to get the current user's information.",
+            "type": "string"
+          },
+          "user_id_type": {
+            "type": "string",
+            "enum": [
+              "open_id",
+              "union_id",
+              "user_id"
+            ]
+          }
+        }
+      },
+      "opts": {
+        "name": "feishu_get_user"
+      }
+    },
+    {
+      "name": "feishu_search_user",
+      "label": "Feishu: Search User",
+      "description": "Search for employees by matching a keyword against names, phone numbers, and email addresses. Returns matching employees with details such as name, department, and open_id.",
+      "parameters": {
+        "type": "object",
+        "required": [
+          "query"
+        ],
+        "properties": {
+          "query": {
+            "description": "Search keyword used to match user names (required).",
+            "type": "string"
+          },
+          "page_size": {
+            "description": "Page size: the number of users returned per request (default: 20; maximum: 200).",
+            "minimum": 1,
+            "maximum": 200,
+            "type": "integer"
+          },
+          "page_token": {
+            "description": "Pagination token. Omit it for the first request. If the response contains page_token, pass that value to retrieve the next page.",
+            "type": "string"
+          }
+        }
+      },
+      "opts": {
+        "name": "feishu_search_user"
+      }
+    },
+    {
+      "name": "feishu_chat",
+      "label": "Feishu: Chat Management",
+      "description": "Manage Feishu group chats as the user. Actions: search (find chats by chat name or member) and get (retrieve details for a specific chat, including its name, description, avatar, owner, and permission settings).",
+      "parameters": {
+        "anyOf": [
+          {
+            "type": "object",
+            "required": [
+              "action",
+              "query"
+            ],
+            "properties": {
+              "action": {
+                "const": "search",
+                "type": "string"
+              },
+              "query": {
+                "description": "Search keyword (required). Supports fuzzy matching against chat names and member names, including multilingual, Pinyin, and prefix matching.",
+                "type": "string"
+              },
+              "page_size": {
+                "description": "Page size (default: 20).",
+                "minimum": 1,
+                "type": "integer"
+              },
+              "page_token": {
+                "description": "Pagination token. Omit it for the first request.",
+                "type": "string"
+              },
+              "user_id_type": {
+                "type": "string",
+                "enum": [
+                  "open_id",
+                  "union_id",
+                  "user_id"
+                ],
+                "description": "User ID type (default: open_id)."
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "action",
+              "chat_id"
+            ],
+            "properties": {
+              "action": {
+                "const": "get",
+                "type": "string"
+              },
+              "chat_id": {
+                "description": "Chat ID (for example, oc_xxx).",
+                "type": "string"
+              },
+              "user_id_type": {
+                "type": "string",
+                "enum": [
+                  "open_id",
+                  "union_id",
+                  "user_id"
+                ],
+                "description": "User ID type (default: open_id)."
+              }
+            }
+          }
+        ]
+      },
+      "opts": {
+        "name": "feishu_chat"
+      }
+    },
+    {
+      "name": "feishu_chat_members",
+      "label": "Feishu: Get Chat Members",
+      "description": "Get the member list of a specified group as the user. Returns member details such as ID and name. Bot members are not included.",
+      "parameters": {
+        "type": "object",
+        "required": [
+          "chat_id"
+        ],
+        "properties": {
+          "chat_id": {
+            "description": "Chat ID (for example, oc_xxx). Use the feishu_chat_search tool to find it.",
+            "type": "string"
+          },
+          "member_id_type": {
+            "type": "string",
+            "enum": [
+              "open_id",
+              "union_id",
+              "user_id"
+            ]
+          },
+          "page_size": {
+            "description": "Page size (default: 20).",
+            "minimum": 1,
+            "type": "integer"
+          },
+          "page_token": {
+            "description": "Pagination token. Omit it for the first request.",
+            "type": "string"
+          }
+        }
+      },
+      "opts": {
+        "name": "feishu_chat_members"
+      }
+    },
+    {
+      "name": "feishu_im_user_message",
+      "label": "Feishu: IM User Message",
+      "description": "Send and reply to Feishu IM messages as the user. **Use this tool only when the user explicitly asks to send or reply as themselves. Otherwise, prefer the message system tool.**\n\nActions:\n- send: Send a message to a direct or group chat. Use receive_id_type=open_id for direct messages and receive_id_type=chat_id for group messages.\n- reply: Reply to a specified message_id, with optional thread replies (reply_in_thread=true).\n\n**Important:** content must be a valid JSON string whose format matches msg_type. For the common text type, use '{\"text\":\"Message content\"}'.\n\n**Safety:** Messages sent with this tool appear to come from the user. Before calling it, confirm both (1) the recipient, person or group, and (2) the exact message content. Never send a message without the user's explicit approval.",
+      "parameters": {
+        "anyOf": [
+          {
+            "type": "object",
+            "required": [
+              "action",
+              "receive_id_type",
+              "receive_id",
+              "msg_type",
+              "content"
+            ],
+            "properties": {
+              "action": {
+                "const": "send",
+                "type": "string"
+              },
+              "receive_id_type": {
+                "type": "string",
+                "enum": [
+                  "open_id",
+                  "chat_id"
+                ],
+                "description": "Recipient ID type: open_id for a direct message (ou_xxx), or chat_id for a group chat (oc_xxx)."
+              },
+              "receive_id": {
+                "description": "Recipient ID matching receive_id_type. Use 'ou_xxx' for open_id or 'oc_xxx' for chat_id.",
+                "type": "string"
+              },
+              "msg_type": {
+                "type": "string",
+                "enum": [
+                  "text",
+                  "post",
+                  "image",
+                  "file",
+                  "audio",
+                  "media",
+                  "interactive",
+                  "share_chat",
+                  "share_user"
+                ],
+                "description": "Message type: text, post (rich text), image, file, interactive (message card), share_chat (chat card), share_user (user card), and others."
+              },
+              "content": {
+                "description": "Message content as a JSON string, formatted for msg_type. Examples: text -> '{\"text\":\"Hello\"}'; image -> '{\"image_key\":\"img_xxx\"}'; share_chat -> '{\"chat_id\":\"oc_xxx\"}'; post -> '{\"en_us\":{\"title\":\"Title\",\"content\":[[{\"tag\":\"text\",\"text\":\"Body\"}]]}}'.",
+                "type": "string"
+              },
+              "uuid": {
+                "description": "Idempotency key. The same uuid sends at most one message within one hour.",
+                "type": "string"
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "action",
+              "message_id",
+              "msg_type",
+              "content"
+            ],
+            "properties": {
+              "action": {
+                "const": "reply",
+                "type": "string"
+              },
+              "message_id": {
+                "description": "ID of the message to reply to (format: om_xxx).",
+                "type": "string"
+              },
+              "msg_type": {
+                "type": "string",
+                "enum": [
+                  "text",
+                  "post",
+                  "image",
+                  "file",
+                  "audio",
+                  "media",
+                  "interactive",
+                  "share_chat",
+                  "share_user"
+                ],
+                "description": "Message type: text, post (rich text), image, interactive (message card), and others."
+              },
+              "content": {
+                "description": "Reply content as a JSON string, using the same format as send.content.",
+                "type": "string"
+              },
+              "reply_in_thread": {
+                "description": "Whether to reply in a thread. If true, the reply appears in the message's thread; if false (default), it appears in the main chat timeline.",
+                "type": "boolean"
+              },
+              "uuid": {
+                "description": "Idempotency key.",
+                "type": "string"
+              }
+            }
+          }
+        ]
+      },
+      "opts": {
+        "name": "feishu_im_user_message"
+      }
+    },
+    {
+      "name": "feishu_im_user_fetch_resource",
+      "label": "Feishu: IM Fetch Resource",
+      "description": "Download a file or image from a Feishu IM message to a local file **as the user**. User OAuth authorization is required.\n\nUse this tool after listing or searching messages as the user when you have obtained a message_id and file_key and need to download the resource with the same user identity.\nIf message_id comes from the current conversation context, such as a message sent to the bot or a quoted message, use feishu_im_bot_image instead. That tool downloads as the bot and does not require user authorization.\n\nParameters:\n- message_id: Message ID (om_xxx) from a message event or message list.\n- file_key: Resource key from the message body. Use image_key (img_xxx) for images or file_key (file_xxx) for files.\n- type: Use image for images, or file for files, audio, and video.\n\nFiles are saved automatically under /tmp/openclaw/. The returned saved_path is the actual local path.\nLimits: maximum file size is 100 MB. Stickers, merged-forward messages, and resources embedded in cards are not supported.",
+      "parameters": {
+        "type": "object",
+        "required": [
+          "message_id",
+          "file_key",
+          "type"
+        ],
+        "properties": {
+          "message_id": {
+            "description": "Message ID (format: om_xxx) from a message event or message list.",
+            "type": "string"
+          },
+          "file_key": {
+            "description": "Resource key from the message body: image_key (img_xxx) for an image message, or file_key (file_xxx) for a file message.",
+            "type": "string"
+          },
+          "type": {
+            "type": "string",
+            "enum": [
+              "image",
+              "file"
+            ],
+            "description": "Resource type: image for an image message, or file for a file, audio, or video message."
+          }
+        }
+      },
+      "opts": {
+        "name": "feishu_im_user_fetch_resource"
+      }
+    },
+    {
+      "name": "feishu_im_user_get_messages",
+      "label": "Feishu: Get IM Messages",
+      "description": "Get message history from a group or direct chat **as the user**.\n\nUsage:\n- Use chat_id to get messages from a group or direct chat.\n- Use open_id to get direct messages with a specified user; the tool resolves chat_id automatically.\n- Filter by relative_time, such as today or last_3_days, or by start_time and end_time in ISO 8601 format.\n- Paginate with page_size and page_token.\n\nParameter constraints:\n- Provide exactly one of open_id and chat_id.\n- Do not combine relative_time with start_time or end_time.\n- page_size must be from 1 through 50 and defaults to 50.\n\nReturns a message list. Each message includes fields such as message_id, msg_type, AI-readable content, sender, and create_time.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "open_id": {
+            "description": "User open_id (ou_xxx) whose direct-message history to retrieve. Mutually exclusive with chat_id.",
+            "type": "string"
+          },
+          "chat_id": {
+            "description": "Conversation ID (oc_xxx) for a direct or group chat. Mutually exclusive with open_id.",
+            "type": "string"
+          },
+          "sort_rule": {
+            "type": "string",
+            "enum": [
+              "create_time_asc",
+              "create_time_desc"
+            ],
+            "description": "Sort order (default: create_time_desc, newest messages first)."
+          },
+          "page_size": {
+            "description": "Messages per page, from 1 through 50 (default: 50).",
+            "minimum": 1,
+            "maximum": 50,
+            "type": "number"
+          },
+          "page_token": {
+            "description": "Pagination token used to retrieve the next page.",
+            "type": "string"
+          },
+          "relative_time": {
+            "description": "Relative time range: today, yesterday, day_before_yesterday, this_week, last_week, this_month, last_month, or last_{N}_{unit}, where unit is minutes, hours, or days. Mutually exclusive with start_time and end_time.",
+            "type": "string"
+          },
+          "start_time": {
+            "description": "Start time in ISO 8601 format, for example 2026-02-27T00:00:00+08:00. Mutually exclusive with relative_time.",
+            "type": "string"
+          },
+          "end_time": {
+            "description": "End time in ISO 8601 format, for example 2026-02-27T23:59:59+08:00. Mutually exclusive with relative_time.",
+            "type": "string"
+          }
+        }
+      },
+      "opts": {
+        "name": "feishu_im_user_get_messages"
+      }
+    },
+    {
+      "name": "feishu_im_user_get_thread_messages",
+      "label": "Feishu: Get Thread Messages",
+      "description": "Get messages from a thread **as the user**.\n\nUsage:\n- Use thread_id (omt_xxx) to get every message in the thread.\n- Paginate with page_size and page_token.\n\nNote: The Feishu API does not support time-range filters for thread messages.\n\nThe returned list has the same format as feishu_im_user_get_messages.",
+      "parameters": {
+        "type": "object",
+        "required": [
+          "thread_id"
+        ],
+        "properties": {
+          "thread_id": {
+            "description": "Thread ID (format: omt_xxx).",
+            "type": "string"
+          },
+          "sort_rule": {
+            "type": "string",
+            "enum": [
+              "create_time_asc",
+              "create_time_desc"
+            ],
+            "description": "Sort order (default: create_time_desc, newest messages first)."
+          },
+          "page_size": {
+            "description": "Messages per page, from 1 through 50 (default: 50).",
+            "minimum": 1,
+            "maximum": 50,
+            "type": "number"
+          },
+          "page_token": {
+            "description": "Pagination token used to retrieve the next page.",
+            "type": "string"
+          }
+        }
+      },
+      "opts": {
+        "name": "feishu_im_user_get_thread_messages"
+      }
+    },
+    {
+      "name": "feishu_im_user_search_messages",
+      "label": "Feishu: Search Messages",
+      "description": "Search Feishu messages across conversations **as the user**.\n\nUsage:\n- Search message content by keyword.\n- Filter by sender, mentioned user, or message type.\n- Filter by relative_time or by start_time and end_time.\n- Limit the search to one conversation with chat_id.\n- Paginate with page_size and page_token.\n\nParameter constraints:\n- All parameters are optional, but provide at least one filter.\n- Do not combine relative_time with start_time or end_time.\n- page_size must be from 1 through 50 and defaults to 50.\n\nReturns a message list. Each message includes fields such as message_id, msg_type, content, sender, and create_time.\nEach message also includes chat_id, chat_type (p2p or group), and chat_name (the group name or direct-message peer's name).\nDirect messages additionally include chat_partner with the peer's open_id and name.\nUse chat_id and thread_id from a result with feishu_im_user_get_messages or feishu_im_user_get_thread_messages to inspect surrounding context.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "query": {
+            "description": "Search keyword matched against message content. Use an empty string to skip content filtering.",
+            "type": "string"
+          },
+          "sender_ids": {
+            "description": "List of sender open_ids. To find an open_id by user name, call the search_user tool first.",
+            "type": "array",
+            "items": {
+              "description": "Sender open_id (ou_xxx).",
+              "type": "string"
+            }
+          },
+          "chat_id": {
+            "description": "Conversation ID (oc_xxx) used to limit the search.",
+            "type": "string"
+          },
+          "mention_ids": {
+            "description": "List of mentioned users' open_ids.",
+            "type": "array",
+            "items": {
+              "description": "Mentioned user's open_id (ou_xxx).",
+              "type": "string"
+            }
+          },
+          "message_type": {
+            "type": "string",
+            "enum": [
+              "file",
+              "image",
+              "media"
+            ],
+            "description": "Message type filter: file, image, or media. Omit it to search all types."
+          },
+          "sender_type": {
+            "type": "string",
+            "enum": [
+              "user",
+              "bot",
+              "all"
+            ],
+            "description": "Sender type: user, bot, or all (default: user)."
+          },
+          "chat_type": {
+            "type": "string",
+            "enum": [
+              "group",
+              "p2p"
+            ],
+            "description": "Conversation type: group or p2p."
+          },
+          "relative_time": {
+            "description": "Relative time range: today, yesterday, day_before_yesterday, this_week, last_week, this_month, last_month, or last_{N}_{unit}, where unit is minutes, hours, or days. Mutually exclusive with start_time and end_time.",
+            "type": "string"
+          },
+          "start_time": {
+            "description": "Start time in ISO 8601 format, for example 2026-02-27T00:00:00+08:00. Mutually exclusive with relative_time.",
+            "type": "string"
+          },
+          "end_time": {
+            "description": "End time in ISO 8601 format, for example 2026-02-27T23:59:59+08:00. Mutually exclusive with relative_time.",
+            "type": "string"
+          },
+          "page_size": {
+            "description": "Messages per page, from 1 through 50 (default: 50).",
+            "minimum": 1,
+            "maximum": 50,
+            "type": "number"
+          },
+          "page_token": {
+            "description": "Pagination token used to retrieve the next page.",
+            "type": "string"
+          }
+        }
+      },
+      "opts": {
+        "name": "feishu_im_user_search_messages"
+      }
+    },
+    {
+      "name": "feishu_calendar_calendar",
+      "label": "Feishu Calendar Management",
+      "description": "Manage Feishu calendars **as the user**. Use it to list calendars, get calendar details, or retrieve the primary calendar. Actions: list, get, and primary.",
+      "parameters": {
+        "anyOf": [
+          {
+            "type": "object",
+            "required": [
+              "action"
+            ],
+            "properties": {
+              "action": {
+                "const": "list",
+                "type": "string"
+              },
+              "page_size": {
+                "description": "Number of calendars to return per page (default: 50, max: 1000)",
+                "type": "number"
+              },
+              "page_token": {
+                "description": "Pagination token for next page",
+                "type": "string"
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "action",
+              "calendar_id"
+            ],
+            "properties": {
+              "action": {
+                "const": "get",
+                "type": "string"
+              },
+              "calendar_id": {
+                "description": "Calendar ID",
+                "type": "string"
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "action"
+            ],
+            "properties": {
+              "action": {
+                "const": "primary",
+                "type": "string"
+              }
+            }
+          }
+        ]
+      },
+      "opts": {
+        "name": "feishu_calendar_calendar"
+      }
+    },
+    {
+      "name": "feishu_calendar_event",
+      "label": "Feishu Calendar Events",
+      "description": "Manage Feishu calendar events **as the user**. Use this tool to view schedules, create or arrange meetings, update or delete events, search events, and respond to event invitations. Actions: create (create an event), list (list events in a time range and expand recurring events), get (get event details), patch (update an event), delete, search, reply (respond to an invitation), instances (list instances of a recurring event), and instance_view (list expanded events).\n\n**Important:** create must include user_open_id, using SenderId from the message context in ou_xxx format. Without it, the event exists only on the app calendar and is invisible to the user. list uses the instance_view endpoint to expand recurring events. Its time range must not exceed 40 days, and it returns at most 1,000 instances. Time values use ISO 8601 / RFC 3339 with a time zone, for example '2024-01-01T00:00:00+08:00'.",
+      "parameters": {
+        "anyOf": [
+          {
+            "type": "object",
+            "required": [
+              "action",
+              "start_time",
+              "end_time"
+            ],
+            "properties": {
+              "action": {
+                "const": "create",
+                "type": "string"
+              },
+              "start_time": {
+                "description": "Start time (required), in ISO 8601 / RFC 3339 format with a time zone, for example '2024-01-01T00:00:00+08:00'.",
+                "type": "string"
+              },
+              "end_time": {
+                "description": "End time (required), in the same format as start_time. If the user does not specify a duration, default to one hour after start_time.",
+                "type": "string"
+              },
+              "summary": {
+                "description": "Event title (optional, but strongly recommended).",
+                "type": "string"
+              },
+              "user_open_id": {
+                "description": "open_id of the user making the request (optional, but strongly recommended). Get it from SenderId in the message context; format: ou_xxx. Events are created on the app calendar, so this parameter must add the user as an attendee for the event to appear in the user's Feishu calendar.",
+                "type": "string"
+              },
+              "calendar_id": {
+                "description": "Calendar ID (optional; primary calendar used if omitted)",
+                "type": "string"
+              },
+              "description": {
+                "description": "Event description.",
+                "type": "string"
+              },
+              "attendees": {
+                "description": "Attendee list (strongly recommended; without attendees, the event exists only on the app calendar and the user cannot see it). For type='user', set id to an open_id. For type='third_party', set id to an email address.",
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "required": [
+                    "type",
+                    "id"
+                  ],
+                  "properties": {
+                    "type": {
+                      "type": "string",
+                      "enum": [
+                        "user",
+                        "chat",
+                        "resource",
+                        "third_party"
+                      ]
+                    },
+                    "id": {
+                      "description": "Attendee open_id, chat_id, resource_id, or email",
+                      "type": "string"
+                    }
+                  }
+                }
+              },
+              "vchat": {
+                "description": "Video-conference details. If omitted, a Feishu video meeting is created automatically when the first attendee is added.",
+                "type": "object",
+                "properties": {
+                  "vc_type": {
+                    "type": "string",
+                    "enum": [
+                      "vc",
+                      "third_party",
+                      "no_meeting"
+                    ],
+                    "description": "Video-conference type: vc (Feishu video meeting), third_party (external meeting link), or no_meeting. If omitted, a Feishu video meeting is created automatically when the first attendee is added."
+                  },
+                  "icon_type": {
+                    "type": "string",
+                    "enum": [
+                      "vc",
+                      "live",
+                      "default"
+                    ],
+                    "description": "Icon type for an external video conference. Applies only when vc_type=third_party."
+                  },
+                  "description": {
+                    "description": "Display text for an external video conference. Applies only when vc_type=third_party.",
+                    "type": "string"
+                  },
+                  "meeting_url": {
+                    "description": "External video-conference URL. Applies only when vc_type=third_party.",
+                    "type": "string"
+                  }
+                }
+              },
+              "visibility": {
+                "type": "string",
+                "enum": [
+                  "default",
+                  "public",
+                  "private"
+                ],
+                "description": "Event visibility: default (follow calendar permissions), public (details are public), or private (visible only to the owner). Default: default."
+              },
+              "attendee_ability": {
+                "type": "string",
+                "enum": [
+                  "none",
+                  "can_see_others",
+                  "can_invite_others",
+                  "can_modify_event"
+                ],
+                "description": "Attendee permissions: none (cannot edit, invite, or view attendees), can_see_others, can_invite_others, or can_modify_event. Default: none."
+              },
+              "free_busy_status": {
+                "type": "string",
+                "enum": [
+                  "busy",
+                  "free"
+                ],
+                "description": "Free/busy status occupied by the event: busy or free. Default: busy."
+              },
+              "location": {
+                "description": "Event location details.",
+                "type": "object",
+                "properties": {
+                  "name": {
+                    "description": "Location name.",
+                    "type": "string"
+                  },
+                  "address": {
+                    "description": "Location address.",
+                    "type": "string"
+                  },
+                  "latitude": {
+                    "description": "Location latitude. Use GCJ-02 coordinates in mainland China and WGS84 elsewhere.",
+                    "type": "number"
+                  },
+                  "longitude": {
+                    "description": "Location longitude. Use GCJ-02 coordinates in mainland China and WGS84 elsewhere.",
+                    "type": "number"
+                  }
+                }
+              },
+              "reminders": {
+                "description": "Event reminder list.",
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "required": [
+                    "minutes"
+                  ],
+                  "properties": {
+                    "minutes": {
+                      "description": "Reminder offset in minutes. Positive values notify before the event starts; negative values notify after it starts. Range: -20160 through 20160.",
+                      "type": "number"
+                    }
+                  }
+                }
+              },
+              "recurrence": {
+                "description": "Recurrence rule in RFC 5545 RRULE format. For example, 'FREQ=DAILY;INTERVAL=1' repeats every day.",
+                "type": "string"
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "action",
+              "start_time",
+              "end_time"
+            ],
+            "properties": {
+              "action": {
+                "const": "list",
+                "type": "string"
+              },
+              "start_time": {
+                "description": "Start time in ISO 8601 / RFC 3339 format with a time zone, for example '2024-01-01T00:00:00+08:00'. The interval between start_time and end_time must be less than 40 days.",
+                "type": "string"
+              },
+              "end_time": {
+                "description": "End time in the same format as start_time. The interval between start_time and end_time must be less than 40 days.",
+                "type": "string"
+              },
+              "calendar_id": {
+                "description": "Calendar ID (optional; primary calendar used if omitted)",
+                "type": "string"
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "action",
+              "event_id"
+            ],
+            "properties": {
+              "action": {
+                "const": "get",
+                "type": "string"
+              },
+              "event_id": {
+                "description": "Event ID",
+                "type": "string"
+              },
+              "calendar_id": {
+                "description": "Calendar ID (optional; primary calendar used if omitted)",
+                "type": "string"
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "action",
+              "event_id"
+            ],
+            "properties": {
+              "action": {
+                "const": "patch",
+                "type": "string"
+              },
+              "event_id": {
+                "description": "Event ID",
+                "type": "string"
+              },
+              "calendar_id": {
+                "description": "Calendar ID (optional; primary calendar used if omitted)",
+                "type": "string"
+              },
+              "summary": {
+                "description": "New event title.",
+                "type": "string"
+              },
+              "description": {
+                "description": "New event description.",
+                "type": "string"
+              },
+              "start_time": {
+                "description": "New start time in ISO 8601 / RFC 3339 format with a time zone, for example '2024-01-01T00:00:00+08:00'.",
+                "type": "string"
+              },
+              "end_time": {
+                "description": "New end time in ISO 8601 / RFC 3339 format with a time zone, for example '2024-01-01T00:00:00+08:00'.",
+                "type": "string"
+              },
+              "location": {
+                "description": "New location.",
+                "type": "string"
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "action",
+              "event_id"
+            ],
+            "properties": {
+              "action": {
+                "const": "delete",
+                "type": "string"
+              },
+              "event_id": {
+                "description": "Event ID",
+                "type": "string"
+              },
+              "calendar_id": {
+                "description": "Calendar ID (optional; primary calendar used if omitted)",
+                "type": "string"
+              },
+              "need_notification": {
+                "description": "Whether to notify attendees (default: true).",
+                "type": "boolean"
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "action",
+              "query"
+            ],
+            "properties": {
+              "action": {
+                "const": "search",
+                "type": "string"
+              },
+              "query": {
+                "description": "Search keyword.",
+                "type": "string"
+              },
+              "calendar_id": {
+                "description": "Calendar ID (optional; primary calendar used if omitted)",
+                "type": "string"
+              },
+              "page_size": {
+                "description": "Number of items per page.",
+                "type": "number"
+              },
+              "page_token": {
+                "description": "Pagination token.",
+                "type": "string"
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "action",
+              "event_id",
+              "rsvp_status"
+            ],
+            "properties": {
+              "action": {
+                "const": "reply",
+                "type": "string"
+              },
+              "event_id": {
+                "description": "Event ID",
+                "type": "string"
+              },
+              "calendar_id": {
+                "description": "Calendar ID (optional; primary calendar used if omitted)",
+                "type": "string"
+              },
+              "rsvp_status": {
+                "type": "string",
+                "enum": [
+                  "accept",
+                  "decline",
+                  "tentative"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "action",
+              "event_id",
+              "start_time",
+              "end_time"
+            ],
+            "properties": {
+              "action": {
+                "const": "instances",
+                "type": "string"
+              },
+              "event_id": {
+                "description": "Event ID of the recurring event.",
+                "type": "string"
+              },
+              "calendar_id": {
+                "description": "Calendar ID (optional; primary calendar used if omitted)",
+                "type": "string"
+              },
+              "start_time": {
+                "description": "Query start time in ISO 8601 / RFC 3339 format with a time zone, for example '2024-01-01T00:00:00+08:00'.",
+                "type": "string"
+              },
+              "end_time": {
+                "description": "Query end time in ISO 8601 / RFC 3339 format with a time zone, for example '2024-01-01T00:00:00+08:00'.",
+                "type": "string"
+              },
+              "page_size": {
+                "description": "Number of items per page.",
+                "type": "number"
+              },
+              "page_token": {
+                "description": "Pagination token.",
+                "type": "string"
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "action",
+              "start_time",
+              "end_time"
+            ],
+            "properties": {
+              "action": {
+                "const": "instance_view",
+                "type": "string"
+              },
+              "start_time": {
+                "description": "Query start time in ISO 8601 / RFC 3339 format with a time zone, for example '2024-01-01T00:00:00+08:00'.",
+                "type": "string"
+              },
+              "end_time": {
+                "description": "Query end time in ISO 8601 / RFC 3339 format with a time zone, for example '2024-01-01T00:00:00+08:00'.",
+                "type": "string"
+              },
+              "calendar_id": {
+                "description": "Calendar ID (optional; primary calendar used if omitted)",
+                "type": "string"
+              },
+              "page_size": {
+                "description": "Number of items per page.",
+                "type": "number"
+              },
+              "page_token": {
+                "description": "Pagination token.",
+                "type": "string"
+              }
+            }
+          }
+        ]
+      },
+      "opts": {
+        "name": "feishu_calendar_event"
+      }
+    },
+    {
+      "name": "feishu_calendar_event_attendee",
+      "label": "Feishu Calendar Event Attendees",
+      "description": "Manage Feishu event attendees. Use it when the user asks to invite or add attendees, or to view an attendee list. Actions: create (add attendees) and list (list attendees).",
+      "parameters": {
+        "anyOf": [
+          {
+            "type": "object",
+            "required": [
+              "action",
+              "calendar_id",
+              "event_id",
+              "attendees"
+            ],
+            "properties": {
+              "action": {
+                "const": "create",
+                "type": "string"
+              },
+              "calendar_id": {
+                "description": "Calendar ID.",
+                "type": "string"
+              },
+              "event_id": {
+                "description": "Event ID.",
+                "type": "string"
+              },
+              "attendees": {
+                "description": "Attendee list.",
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "required": [
+                    "type",
+                    "attendee_id"
+                  ],
+                  "properties": {
+                    "type": {
+                      "type": "string",
+                      "enum": [
+                        "user",
+                        "chat",
+                        "resource",
+                        "third_party"
+                      ]
+                    },
+                    "attendee_id": {
+                      "description": "Attendee ID. For type=user, use open_id; for type=chat, use chat_id; for type=resource, use the meeting-room ID; and for type=third_party, use an email address.",
+                      "type": "string"
+                    }
+                  }
+                }
+              },
+              "need_notification": {
+                "description": "Whether to notify attendees (default: true).",
+                "type": "boolean"
+              },
+              "attendee_ability": {
+                "type": "string",
+                "enum": [
+                  "none",
+                  "can_see_others",
+                  "can_invite_others",
+                  "can_modify_event"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "action",
+              "calendar_id",
+              "event_id"
+            ],
+            "properties": {
+              "action": {
+                "const": "list",
+                "type": "string"
+              },
+              "calendar_id": {
+                "description": "Calendar ID.",
+                "type": "string"
+              },
+              "event_id": {
+                "description": "Event ID.",
+                "type": "string"
+              },
+              "page_size": {
+                "description": "Number of items per page (default: 50; maximum: 500).",
+                "type": "number"
+              },
+              "page_token": {
+                "description": "Pagination token.",
+                "type": "string"
+              },
+              "user_id_type": {
+                "type": "string",
+                "enum": [
+                  "open_id",
+                  "union_id",
+                  "user_id"
+                ]
+              }
+            }
+          }
+        ]
+      },
+      "opts": {
+        "name": "feishu_calendar_event_attendee"
+      }
+    },
+    {
+      "name": "feishu_calendar_freebusy",
+      "label": "Feishu Calendar Free/Busy Status",
+      "description": "Query Feishu calendar free/busy status **as the user**. Use it to check whether people are available during a time range. Supports querying the primary calendars of 1 to 10 users at once to help schedule meetings.",
+      "parameters": {
+        "type": "object",
+        "required": [
+          "action",
+          "time_min",
+          "time_max",
+          "user_ids"
+        ],
+        "properties": {
+          "action": {
+            "const": "list",
+            "type": "string"
+          },
+          "time_min": {
+            "description": "Query start time in ISO 8601 / RFC 3339 format with a time zone, for example '2024-01-01T00:00:00+08:00'.",
+            "type": "string"
+          },
+          "time_max": {
+            "description": "Query end time in ISO 8601 / RFC 3339 format with a time zone, for example '2024-01-01T00:00:00+08:00'.",
+            "type": "string"
+          },
+          "user_ids": {
+            "description": "IDs of the users whose free/busy status to query (1 to 10 users).",
+            "minItems": 1,
+            "maxItems": 10,
+            "type": "array",
+            "items": {
+              "description": "User open_id.",
+              "type": "string"
+            }
+          }
+        }
+      },
+      "opts": {
+        "name": "feishu_calendar_freebusy"
+      }
+    },
+    {
+      "name": "feishu_task_task",
+      "label": "Feishu Task Management",
+      "description": "Manage Feishu tasks **as the user or app**. Use it to create, retrieve, and update tasks. Actions: create, get, list (returns only tasks assigned to the current user), patch, add_members, and append_steps (append task progress entries). Time values use ISO 8601 / RFC 3339 with a time zone, for example '2024-01-01T00:00:00+08:00'. Use auth_type to select user or tenant identity; append_steps always uses app identity.",
+      "parameters": {
+        "anyOf": [
+          {
+            "type": "object",
+            "required": [
+              "action",
+              "summary"
+            ],
+            "properties": {
+              "action": {
+                "const": "create",
+                "type": "string"
+              },
+              "summary": {
+                "description": "Task title.",
+                "type": "string"
+              },
+              "current_user_id": {
+                "description": "Current user's open_id (strongly recommended; obtain it from SenderId in the message context). If members does not include this user, the tool adds them as a follower automatically so the creator can edit the task.",
+                "type": "string"
+              },
+              "description": {
+                "description": "Task description.",
+                "type": "string"
+              },
+              "due": {
+                "type": "object",
+                "required": [
+                  "timestamp"
+                ],
+                "properties": {
+                  "timestamp": {
+                    "description": "Due time in ISO 8601 / RFC 3339 format with a time zone, for example '2024-01-01T00:00:00+08:00'.",
+                    "type": "string"
+                  },
+                  "is_all_day": {
+                    "description": "Whether this is an all-day task.",
+                    "type": "boolean"
+                  }
+                }
+              },
+              "start": {
+                "type": "object",
+                "required": [
+                  "timestamp"
+                ],
+                "properties": {
+                  "timestamp": {
+                    "description": "Start time in ISO 8601 / RFC 3339 format with a time zone, for example '2024-01-01T00:00:00+08:00'.",
+                    "type": "string"
+                  },
+                  "is_all_day": {
+                    "description": "Whether the start is all day.",
+                    "type": "boolean"
+                  }
+                }
+              },
+              "members": {
+                "description": "Task members. Roles are assignee and follower. Member type may be user or app and defaults to user. Bots and applications should use app.",
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "required": [
+                    "id"
+                  ],
+                  "properties": {
+                    "id": {
+                      "description": "Member ID, usually an open_id.",
+                      "type": "string"
+                    },
+                    "type": {
+                      "type": "string",
+                      "enum": [
+                        "user",
+                        "app"
+                      ]
+                    },
+                    "role": {
+                      "type": "string",
+                      "enum": [
+                        "assignee",
+                        "follower"
+                      ]
+                    }
+                  }
+                }
+              },
+              "repeat_rule": {
+                "description": "Recurrence rule in RRULE format.",
+                "type": "string"
+              },
+              "tasklists": {
+                "description": "Lists that contain the task.",
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "required": [
+                    "tasklist_guid"
+                  ],
+                  "properties": {
+                    "tasklist_guid": {
+                      "description": "Task-list GUID.",
+                      "type": "string"
+                    },
+                    "section_guid": {
+                      "description": "Section GUID.",
+                      "type": "string"
+                    }
+                  }
+                }
+              },
+              "auth_type": {
+                "type": "string",
+                "enum": [
+                  "tenant",
+                  "user"
+                ],
+                "description": "Authorization type (default: user). user uses the user's identity and can access only tasks the user is permitted to access; tenant uses the app identity."
+              },
+              "user_id_type": {
+                "type": "string",
+                "enum": [
+                  "open_id",
+                  "union_id",
+                  "user_id"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "action",
+              "task_guid"
+            ],
+            "properties": {
+              "action": {
+                "const": "get",
+                "type": "string"
+              },
+              "task_guid": {
+                "description": "Task GUID",
+                "type": "string"
+              },
+              "auth_type": {
+                "type": "string",
+                "enum": [
+                  "tenant",
+                  "user"
+                ],
+                "description": "Authorization type (default: user)."
+              },
+              "user_id_type": {
+                "type": "string",
+                "enum": [
+                  "open_id",
+                  "union_id",
+                  "user_id"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "action"
+            ],
+            "properties": {
+              "action": {
+                "const": "list",
+                "type": "string"
+              },
+              "page_size": {
+                "description": "Number of items per page (default: 50; maximum: 100).",
+                "type": "number"
+              },
+              "page_token": {
+                "description": "Pagination token.",
+                "type": "string"
+              },
+              "completed": {
+                "description": "Whether to filter for completed tasks.",
+                "type": "boolean"
+              },
+              "agent_task_status": {
+                "description": "Agent task status.",
+                "type": "integer"
+              },
+              "auth_type": {
+                "type": "string",
+                "enum": [
+                  "tenant",
+                  "user"
+                ],
+                "description": "Authorization type (default: user)."
+              },
+              "user_id_type": {
+                "type": "string",
+                "enum": [
+                  "open_id",
+                  "union_id",
+                  "user_id"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "action",
+              "task_guid"
+            ],
+            "properties": {
+              "action": {
+                "const": "patch",
+                "type": "string"
+              },
+              "task_guid": {
+                "description": "Task GUID",
+                "type": "string"
+              },
+              "summary": {
+                "description": "New task title.",
+                "type": "string"
+              },
+              "description": {
+                "description": "New task description.",
+                "type": "string"
+              },
+              "due": {
+                "type": "object",
+                "required": [
+                  "timestamp"
+                ],
+                "properties": {
+                  "timestamp": {
+                    "description": "New due time in ISO 8601 / RFC 3339 format with a time zone, for example '2024-01-01T00:00:00+08:00'.",
+                    "type": "string"
+                  },
+                  "is_all_day": {
+                    "description": "Whether this is an all-day task.",
+                    "type": "boolean"
+                  }
+                }
+              },
+              "start": {
+                "type": "object",
+                "required": [
+                  "timestamp"
+                ],
+                "properties": {
+                  "timestamp": {
+                    "description": "New start time in ISO 8601 / RFC 3339 format with a time zone, for example '2024-01-01T00:00:00+08:00'.",
+                    "type": "string"
+                  },
+                  "is_all_day": {
+                    "description": "Whether the start is all day.",
+                    "type": "boolean"
+                  }
+                }
+              },
+              "completed_at": {
+                "description": "Completion time. Accepted formats: (1) ISO 8601 / RFC 3339 with a time zone, for example '2024-01-01T00:00:00+08:00', to mark complete; (2) '0' to mark incomplete; or (3) a millisecond timestamp string.",
+                "type": "string"
+              },
+              "agent_task_progress": {
+                "description": "Agent task progress.",
+                "type": "string"
+              },
+              "agent_task_status": {
+                "description": "Agent task status.",
+                "type": "integer"
+              },
+              "text_deliveries": {
+                "description": "Text-delivery list.",
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "members": {
+                "description": "New task-member list. Member type may be user or app and defaults to user.",
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "required": [
+                    "id"
+                  ],
+                  "properties": {
+                    "id": {
+                      "description": "Member ID, usually an open_id.",
+                      "type": "string"
+                    },
+                    "type": {
+                      "type": "string",
+                      "enum": [
+                        "user",
+                        "app"
+                      ]
+                    },
+                    "role": {
+                      "type": "string",
+                      "enum": [
+                        "assignee",
+                        "follower"
+                      ]
+                    }
+                  }
+                }
+              },
+              "repeat_rule": {
+                "description": "New recurrence rule in RRULE format.",
+                "type": "string"
+              },
+              "auth_type": {
+                "type": "string",
+                "enum": [
+                  "tenant",
+                  "user"
+                ],
+                "description": "Authorization type (default: user)."
+              },
+              "user_id_type": {
+                "type": "string",
+                "enum": [
+                  "open_id",
+                  "union_id",
+                  "user_id"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "action",
+              "task_guid",
+              "members"
+            ],
+            "properties": {
+              "action": {
+                "const": "add_members",
+                "type": "string"
+              },
+              "task_guid": {
+                "description": "Task GUID",
+                "type": "string"
+              },
+              "members": {
+                "description": "Members to add. Roles are assignee and follower. Member type may be user or app and defaults to user.",
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "required": [
+                    "id"
+                  ],
+                  "properties": {
+                    "id": {
+                      "description": "Member ID, usually an open_id.",
+                      "type": "string"
+                    },
+                    "type": {
+                      "type": "string",
+                      "enum": [
+                        "user",
+                        "app"
+                      ]
+                    },
+                    "role": {
+                      "type": "string",
+                      "enum": [
+                        "assignee",
+                        "follower"
+                      ]
+                    }
+                  }
+                }
+              },
+              "client_token": {
+                "description": "Idempotency token. If provided, repeated requests are idempotent.",
+                "type": "string"
+              },
+              "auth_type": {
+                "type": "string",
+                "enum": [
+                  "tenant",
+                  "user"
+                ],
+                "description": "Authorization type (default: user)."
+              },
+              "user_id_type": {
+                "type": "string",
+                "enum": [
+                  "open_id",
+                  "union_id",
+                  "user_id"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "action",
+              "task_guid",
+              "idempotent_key",
+              "task_steps"
+            ],
+            "properties": {
+              "action": {
+                "const": "append_steps",
+                "type": "string"
+              },
+              "task_guid": {
+                "description": "Task GUID.",
+                "type": "string"
+              },
+              "idempotent_key": {
+                "description": "Idempotency key.",
+                "type": "string"
+              },
+              "task_steps": {
+                "description": "Task steps to append.",
+                "minItems": 1,
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "required": [
+                    "quote",
+                    "content",
+                    "timestamp"
+                  ],
+                  "properties": {
+                    "quote": {
+                      "description": "Step quotation metadata.",
+                      "type": "string"
+                    },
+                    "content": {
+                      "description": "Step content.",
+                      "type": "string"
+                    },
+                    "timestamp": {
+                      "description": "Step timestamp.",
+                      "type": "integer"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        ]
+      },
+      "opts": {
+        "name": "feishu_task_task"
+      }
+    },
+    {
+      "name": "feishu_task_tasklist",
+      "label": "Feishu Task Lists",
+      "description": "Manage Feishu task lists **as the user or app**. Use it to create, query, or update lists and to view tasks in a list. Actions: create, get, list (all readable lists, including lists created by or shared with the user), tasks, patch, and add_members.",
+      "parameters": {
+        "anyOf": [
+          {
+            "type": "object",
+            "required": [
+              "action",
+              "name"
+            ],
+            "properties": {
+              "action": {
+                "const": "create",
+                "type": "string"
+              },
+              "auth_type": {
+                "type": "string",
+                "enum": [
+                  "tenant",
+                  "user"
+                ],
+                "description": "Token identity for the API call: \"tenant\" for app identity or \"user\" for user identity. Default: \"user\"."
+              },
+              "name": {
+                "description": "Task-list name.",
+                "type": "string"
+              },
+              "members": {
+                "description": "Task-list members. Roles are editor and viewer. The creator automatically becomes owner. If the creator is also listed in members, they remain owner and are removed from members because a user can have only one role. Member type may be user or app and defaults to user.",
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "required": [
+                    "id"
+                  ],
+                  "properties": {
+                    "id": {
+                      "description": "Member ID, usually an open_id.",
+                      "type": "string"
+                    },
+                    "type": {
+                      "type": "string",
+                      "enum": [
+                        "user",
+                        "app"
+                      ]
+                    },
+                    "role": {
+                      "type": "string",
+                      "enum": [
+                        "editor",
+                        "viewer"
+                      ]
+                    }
+                  }
+                }
+              },
+              "user_id_type": {
+                "type": "string",
+                "enum": [
+                  "open_id",
+                  "union_id",
+                  "user_id"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "action",
+              "tasklist_guid"
+            ],
+            "properties": {
+              "action": {
+                "const": "get",
+                "type": "string"
+              },
+              "auth_type": {
+                "type": "string",
+                "enum": [
+                  "tenant",
+                  "user"
+                ],
+                "description": "Token identity for the API call: \"tenant\" for app identity or \"user\" for user identity. Default: \"user\"."
+              },
+              "tasklist_guid": {
+                "description": "Task-list GUID.",
+                "type": "string"
+              },
+              "user_id_type": {
+                "type": "string",
+                "enum": [
+                  "open_id",
+                  "union_id",
+                  "user_id"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "action"
+            ],
+            "properties": {
+              "action": {
+                "const": "list",
+                "type": "string"
+              },
+              "auth_type": {
+                "type": "string",
+                "enum": [
+                  "tenant",
+                  "user"
+                ],
+                "description": "Token identity for the API call: \"tenant\" for app identity or \"user\" for user identity. Default: \"user\"."
+              },
+              "page_size": {
+                "description": "Number of items per page (default: 50; maximum: 100).",
+                "type": "number"
+              },
+              "page_token": {
+                "description": "Pagination token.",
+                "type": "string"
+              },
+              "user_id_type": {
+                "type": "string",
+                "enum": [
+                  "open_id",
+                  "union_id",
+                  "user_id"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "action",
+              "tasklist_guid"
+            ],
+            "properties": {
+              "action": {
+                "const": "tasks",
+                "type": "string"
+              },
+              "auth_type": {
+                "type": "string",
+                "enum": [
+                  "tenant",
+                  "user"
+                ],
+                "description": "Token identity for the API call: \"tenant\" for app identity or \"user\" for user identity. Default: \"user\"."
+              },
+              "tasklist_guid": {
+                "description": "Task-list GUID.",
+                "type": "string"
+              },
+              "page_size": {
+                "description": "Number of items per page (default: 50; maximum: 100).",
+                "type": "number"
+              },
+              "page_token": {
+                "description": "Pagination token.",
+                "type": "string"
+              },
+              "completed": {
+                "description": "Whether to return only completed tasks (default: return all tasks).",
+                "type": "boolean"
+              },
+              "user_id_type": {
+                "type": "string",
+                "enum": [
+                  "open_id",
+                  "union_id",
+                  "user_id"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "action",
+              "tasklist_guid"
+            ],
+            "properties": {
+              "action": {
+                "const": "patch",
+                "type": "string"
+              },
+              "auth_type": {
+                "type": "string",
+                "enum": [
+                  "tenant",
+                  "user"
+                ],
+                "description": "Token identity for the API call: \"tenant\" for app identity or \"user\" for user identity. Default: \"user\"."
+              },
+              "tasklist_guid": {
+                "description": "Task-list GUID.",
+                "type": "string"
+              },
+              "name": {
+                "description": "New task-list name.",
+                "type": "string"
+              },
+              "user_id_type": {
+                "type": "string",
+                "enum": [
+                  "open_id",
+                  "union_id",
+                  "user_id"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "action",
+              "tasklist_guid",
+              "members"
+            ],
+            "properties": {
+              "action": {
+                "const": "add_members",
+                "type": "string"
+              },
+              "auth_type": {
+                "type": "string",
+                "enum": [
+                  "tenant",
+                  "user"
+                ],
+                "description": "Token identity for the API call: \"tenant\" for app identity or \"user\" for user identity. Default: \"user\"."
+              },
+              "tasklist_guid": {
+                "description": "Task-list GUID.",
+                "type": "string"
+              },
+              "members": {
+                "description": "Members to add.",
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "required": [
+                    "id"
+                  ],
+                  "properties": {
+                    "id": {
+                      "description": "Member ID, usually an open_id.",
+                      "type": "string"
+                    },
+                    "type": {
+                      "type": "string",
+                      "enum": [
+                        "user",
+                        "app"
+                      ]
+                    },
+                    "role": {
+                      "type": "string",
+                      "enum": [
+                        "editor",
+                        "viewer"
+                      ]
+                    }
+                  }
+                }
+              },
+              "user_id_type": {
+                "type": "string",
+                "enum": [
+                  "open_id",
+                  "union_id",
+                  "user_id"
+                ]
+              }
+            }
+          }
+        ]
+      },
+      "opts": {
+        "name": "feishu_task_tasklist"
+      }
+    },
+    {
+      "name": "feishu_task_attachment",
+      "label": "Feishu Task Attachment",
+      "description": "Manage Feishu task attachments. Currently supports the upload action for uploading a task attachment.",
+      "parameters": {
+        "type": "object",
+        "required": [
+          "action",
+          "resource_id",
+          "file"
+        ],
+        "properties": {
+          "action": {
+            "const": "upload",
+            "type": "string"
+          },
+          "resource_type": {
+            "type": "string",
+            "enum": [
+              "task",
+              "task_delivery"
+            ],
+            "description": "Resource type: task or task_delivery. Default: task.",
+            "default": "task"
+          },
+          "resource_id": {
+            "description": "Resource ID.",
+            "type": "string"
+          },
+          "file": {
+            "description": "Base64-encoded file content.",
+            "type": "string"
+          },
+          "name": {
+            "description": "File name.",
+            "type": "string"
+          }
+        }
+      },
+      "opts": {
+        "name": "feishu_task_attachment"
+      }
+    },
+    {
+      "name": "feishu_task_section",
+      "label": "Feishu Task Section Management",
+      "description": "Manage custom Feishu task sections **as the user or app**. Use it to create, retrieve, update, and list custom sections, and to list tasks in a section. Actions: create, get, patch, list, and tasks.",
+      "parameters": {
+        "anyOf": [
+          {
+            "type": "object",
+            "required": [
+              "action",
+              "name",
+              "resource_type"
+            ],
+            "properties": {
+              "action": {
+                "const": "create",
+                "type": "string"
+              },
+              "auth_type": {
+                "type": "string",
+                "enum": [
+                  "tenant",
+                  "user"
+                ],
+                "description": "Token identity for the API call: \"tenant\" for app identity or \"user\" for user identity. Default: \"user\"."
+              },
+              "name": {
+                "description": "Custom section name. It cannot be empty and may contain at most 100 UTF-8 characters.",
+                "type": "string"
+              },
+              "resource_type": {
+                "type": "string",
+                "enum": [
+                  "tasklist",
+                  "my_tasks"
+                ]
+              },
+              "resource_id": {
+                "description": "ID of the resource that owns the custom section. For resource_type='tasklist', provide the task-list GUID. For resource_type='my_tasks', omit this value.",
+                "type": "string"
+              },
+              "insert_before": {
+                "description": "GUID of the target custom section before which to insert the new section.",
+                "type": "string"
+              },
+              "insert_after": {
+                "description": "GUID of the target custom section after which to insert the new section.",
+                "type": "string"
+              },
+              "user_id_type": {
+                "type": "string",
+                "enum": [
+                  "open_id",
+                  "union_id",
+                  "user_id"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "action",
+              "section_guid"
+            ],
+            "properties": {
+              "action": {
+                "const": "get",
+                "type": "string"
+              },
+              "auth_type": {
+                "type": "string",
+                "enum": [
+                  "tenant",
+                  "user"
+                ],
+                "description": "Token identity for the API call: \"tenant\" for app identity or \"user\" for user identity. Default: \"user\"."
+              },
+              "section_guid": {
+                "description": "GUID of the custom section to retrieve.",
+                "type": "string"
+              },
+              "user_id_type": {
+                "type": "string",
+                "enum": [
+                  "open_id",
+                  "union_id",
+                  "user_id"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "action",
+              "section_guid"
+            ],
+            "properties": {
+              "action": {
+                "const": "patch",
+                "type": "string"
+              },
+              "auth_type": {
+                "type": "string",
+                "enum": [
+                  "tenant",
+                  "user"
+                ],
+                "description": "Token identity for the API call: \"tenant\" for app identity or \"user\" for user identity. Default: \"user\"."
+              },
+              "section_guid": {
+                "description": "GUID of the custom section to update.",
+                "type": "string"
+              },
+              "name": {
+                "description": "Custom section name.",
+                "type": "string"
+              },
+              "insert_before": {
+                "description": "section_guid of the custom section before which to move this section.",
+                "type": "string"
+              },
+              "insert_after": {
+                "description": "section_guid of the custom section after which to move this section.",
+                "type": "string"
+              },
+              "user_id_type": {
+                "type": "string",
+                "enum": [
+                  "open_id",
+                  "union_id",
+                  "user_id"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "action",
+              "resource_type"
+            ],
+            "properties": {
+              "action": {
+                "const": "list",
+                "type": "string"
+              },
+              "auth_type": {
+                "type": "string",
+                "enum": [
+                  "tenant",
+                  "user"
+                ],
+                "description": "Token identity for the API call: \"tenant\" for app identity or \"user\" for user identity. Default: \"user\"."
+              },
+              "resource_type": {
+                "type": "string",
+                "enum": [
+                  "tasklist",
+                  "my_tasks"
+                ]
+              },
+              "resource_id": {
+                "description": "For resource_type='tasklist', provide the GUID of the task list whose custom sections to list.",
+                "type": "string"
+              },
+              "page_size": {
+                "description": "Page size.",
+                "type": "number"
+              },
+              "page_token": {
+                "description": "Pagination token.",
+                "type": "string"
+              },
+              "user_id_type": {
+                "type": "string",
+                "enum": [
+                  "open_id",
+                  "union_id",
+                  "user_id"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "action",
+              "section_guid"
+            ],
+            "properties": {
+              "action": {
+                "const": "tasks",
+                "type": "string"
+              },
+              "auth_type": {
+                "type": "string",
+                "enum": [
+                  "tenant",
+                  "user"
+                ],
+                "description": "Token identity for the API call: \"tenant\" for app identity or \"user\" for user identity. Default: \"user\"."
+              },
+              "section_guid": {
+                "description": "Globally unique ID of the custom section whose tasks to retrieve.",
+                "type": "string"
+              },
+              "page_size": {
+                "description": "Page size.",
+                "type": "number"
+              },
+              "page_token": {
+                "description": "Pagination token.",
+                "type": "string"
+              },
+              "completed": {
+                "description": "Filter by task completion status. Omit it to include all completion states.",
+                "type": "boolean"
+              },
+              "created_from": {
+                "description": "Start of the creation-time filter, as ISO 8601 or a millisecond timestamp.",
+                "type": "string"
+              },
+              "created_to": {
+                "description": "End of the creation-time filter, as ISO 8601 or a millisecond timestamp.",
+                "type": "string"
+              },
+              "user_id_type": {
+                "type": "string",
+                "enum": [
+                  "open_id",
+                  "union_id",
+                  "user_id"
+                ]
+              }
+            }
+          }
+        ]
+      },
+      "opts": {
+        "name": "feishu_task_section"
+      }
+    },
+    {
+      "name": "feishu_task_comment",
+      "label": "Feishu Task Comments",
+      "description": "Manage Feishu task comments **as the user or app**. Use it to add or list task comments and reply to comments. Actions: create, list, and get.",
+      "parameters": {
+        "anyOf": [
+          {
+            "type": "object",
+            "required": [
+              "action",
+              "task_guid",
+              "content"
+            ],
+            "properties": {
+              "action": {
+                "const": "create",
+                "type": "string"
+              },
+              "auth_type": {
+                "type": "string",
+                "enum": [
+                  "tenant",
+                  "user"
+                ],
+                "description": "Token identity for the API call: \"tenant\" for app identity or \"user\" for user identity. Default: \"user\"."
+              },
+              "task_guid": {
+                "description": "Task GUID.",
+                "type": "string"
+              },
+              "content": {
+                "description": "Comment content as plain text, up to 3,000 characters.",
+                "type": "string"
+              },
+              "reply_to_comment_id": {
+                "description": "ID of the comment to reply to.",
+                "type": "string"
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "action",
+              "resource_id"
+            ],
+            "properties": {
+              "action": {
+                "const": "list",
+                "type": "string"
+              },
+              "auth_type": {
+                "type": "string",
+                "enum": [
+                  "tenant",
+                  "user"
+                ],
+                "description": "Token identity for the API call: \"tenant\" for app identity or \"user\" for user identity. Default: \"user\"."
+              },
+              "resource_id": {
+                "description": "ID of the resource whose comments to retrieve (the task GUID).",
+                "type": "string"
+              },
+              "direction": {
+                "type": "string",
+                "enum": [
+                  "asc",
+                  "desc"
+                ],
+                "description": "Sort direction: asc for oldest first or desc for newest first. Default: asc."
+              },
+              "page_size": {
+                "description": "Number of items per page (default: 50; maximum: 100).",
+                "type": "number"
+              },
+              "page_token": {
+                "description": "Pagination token.",
+                "type": "string"
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "action",
+              "comment_id"
+            ],
+            "properties": {
+              "action": {
+                "const": "get",
+                "type": "string"
+              },
+              "auth_type": {
+                "type": "string",
+                "enum": [
+                  "tenant",
+                  "user"
+                ],
+                "description": "Token identity for the API call: \"tenant\" for app identity or \"user\" for user identity. Default: \"user\"."
+              },
+              "comment_id": {
+                "description": "Comment ID.",
+                "type": "string"
+              }
+            }
+          }
+        ]
+      },
+      "opts": {
+        "name": "feishu_task_comment"
+      }
+    },
+    {
+      "name": "feishu_task_subtask",
+      "label": "Feishu Task Subtasks",
+      "description": "Manage Feishu subtasks **as the user or app**. Use it to create a subtask or list a task's subtasks. Actions: create and list.",
+      "parameters": {
+        "anyOf": [
+          {
+            "type": "object",
+            "required": [
+              "action",
+              "task_guid",
+              "summary"
+            ],
+            "properties": {
+              "action": {
+                "const": "create",
+                "type": "string"
+              },
+              "auth_type": {
+                "type": "string",
+                "enum": [
+                  "tenant",
+                  "user"
+                ],
+                "description": "Token identity for the API call: \"tenant\" for app identity or \"user\" for user identity. Default: \"user\"."
+              },
+              "task_guid": {
+                "description": "Parent task GUID.",
+                "type": "string"
+              },
+              "summary": {
+                "description": "Subtask title.",
+                "type": "string"
+              },
+              "description": {
+                "description": "Subtask description.",
+                "type": "string"
+              },
+              "due": {
+                "type": "object",
+                "required": [
+                  "timestamp"
+                ],
+                "properties": {
+                  "timestamp": {
+                    "description": "Due time in ISO 8601 / RFC 3339 format with a time zone, for example '2024-01-01T00:00:00+08:00'.",
+                    "type": "string"
+                  },
+                  "is_all_day": {
+                    "description": "Whether this is an all-day task.",
+                    "type": "boolean"
+                  }
+                }
+              },
+              "start": {
+                "type": "object",
+                "required": [
+                  "timestamp"
+                ],
+                "properties": {
+                  "timestamp": {
+                    "description": "Start time in ISO 8601 / RFC 3339 format with a time zone, for example '2024-01-01T00:00:00+08:00'.",
+                    "type": "string"
+                  },
+                  "is_all_day": {
+                    "description": "Whether the start is all day.",
+                    "type": "boolean"
+                  }
+                }
+              },
+              "members": {
+                "description": "Subtask members. Roles are assignee and follower.",
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "required": [
+                    "id"
+                  ],
+                  "properties": {
+                    "id": {
+                      "description": "Member ID, usually an open_id.",
+                      "type": "string"
+                    },
+                    "type": {
+                      "type": "string",
+                      "enum": [
+                        "user",
+                        "app"
+                      ]
+                    },
+                    "role": {
+                      "type": "string",
+                      "enum": [
+                        "assignee",
+                        "follower"
+                      ]
+                    }
+                  }
+                }
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "action",
+              "task_guid"
+            ],
+            "properties": {
+              "action": {
+                "const": "list",
+                "type": "string"
+              },
+              "auth_type": {
+                "type": "string",
+                "enum": [
+                  "tenant",
+                  "user"
+                ],
+                "description": "Token identity for the API call: \"tenant\" for app identity or \"user\" for user identity. Default: \"user\"."
+              },
+              "task_guid": {
+                "description": "Parent task GUID.",
+                "type": "string"
+              },
+              "page_size": {
+                "description": "Number of items per page (default: 50; maximum: 100).",
+                "type": "number"
+              },
+              "page_token": {
+                "description": "Pagination token.",
+                "type": "string"
+              }
+            }
+          }
+        ]
+      },
+      "opts": {
+        "name": "feishu_task_subtask"
+      }
+    },
+    {
+      "name": "feishu_task_agent",
+      "label": "Feishu Task Agent Registration",
+      "description": "Register and manage Feishu Task Agents. Supports registering or unregistering a Task Agent and listing registered agents.",
+      "parameters": {
+        "anyOf": [
+          {
+            "type": "object",
+            "required": [
+              "action"
+            ],
+            "properties": {
+              "action": {
+                "const": "register",
+                "type": "string"
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "action",
+              "profile_content"
+            ],
+            "properties": {
+              "action": {
+                "const": "update_profile",
+                "type": "string"
+              },
+              "profile_content": {
+                "type": "string"
+              }
+            }
+          }
+        ]
+      },
+      "opts": {
+        "name": "feishu_task_agent"
+      }
+    },
+    {
+      "name": "feishu_bitable_app",
+      "label": "Feishu Bitable Apps",
+      "description": "Manage Feishu Bitable apps **as the user**. Use it to create, retrieve, list, update, delete, or copy a Bitable. Actions: create, get, list, patch, delete, and copy.",
+      "parameters": {
+        "anyOf": [
+          {
+            "type": "object",
+            "required": [
+              "action",
+              "name"
+            ],
+            "properties": {
+              "action": {
+                "const": "create",
+                "type": "string"
+              },
+              "name": {
+                "description": "Bitable name.",
+                "type": "string"
+              },
+              "folder_token": {
+                "description": "Containing folder token. Defaults to My Space.",
+                "type": "string"
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "action",
+              "app_token"
+            ],
+            "properties": {
+              "action": {
+                "const": "get",
+                "type": "string"
+              },
+              "app_token": {
+                "description": "Unique token of the Bitable app.",
+                "type": "string"
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "action"
+            ],
+            "properties": {
+              "action": {
+                "const": "list",
+                "type": "string"
+              },
+              "folder_token": {
+                "description": "Folder token. Defaults to listing My Space.",
+                "type": "string"
+              },
+              "page_size": {
+                "description": "Number of items per page (default: 50; maximum: 200).",
+                "type": "number"
+              },
+              "page_token": {
+                "description": "Pagination token.",
+                "type": "string"
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "action",
+              "app_token"
+            ],
+            "properties": {
+              "action": {
+                "const": "patch",
+                "type": "string"
+              },
+              "app_token": {
+                "description": "Bitable app token.",
+                "type": "string"
+              },
+              "name": {
+                "description": "New name.",
+                "type": "string"
+              },
+              "is_advanced": {
+                "description": "Whether to enable advanced permissions.",
+                "type": "boolean"
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "action",
+              "app_token",
+              "name"
+            ],
+            "properties": {
+              "action": {
+                "const": "copy",
+                "type": "string"
+              },
+              "app_token": {
+                "description": "Source Bitable app token.",
+                "type": "string"
+              },
+              "name": {
+                "description": "New name.",
+                "type": "string"
+              },
+              "folder_token": {
+                "description": "Destination folder token.",
+                "type": "string"
+              }
+            }
+          }
+        ]
+      },
+      "opts": {
+        "name": "feishu_bitable_app"
+      }
+    },
+    {
+      "name": "feishu_bitable_app_table",
+      "label": "Feishu Bitable Tables",
+      "description": "Manage Feishu Bitable tables **as the user**. Use it to create, list, update, or batch-create tables.\n\nActions:\n- create: Create a table. Optionally define fields at creation time with the fields array, or add them individually later.\n- list: List all tables.\n- patch: Update a table.\n- batch_create: Create multiple tables.\n\nField-definition approaches:\n1. When requirements are clear, define every field in create.table.fields to reduce API calls.\n2. For exploratory work, start with the default table and modify fields incrementally with feishu_bitable_app_table_field. This is easier to adjust.",
+      "parameters": {
+        "anyOf": [
+          {
+            "type": "object",
+            "required": [
+              "action",
+              "app_token",
+              "table"
+            ],
+            "properties": {
+              "action": {
+                "const": "create",
+                "type": "string"
+              },
+              "app_token": {
+                "description": "Bitable app token.",
+                "type": "string"
+              },
+              "table": {
+                "type": "object",
+                "required": [
+                  "name"
+                ],
+                "properties": {
+                  "name": {
+                    "description": "Table name.",
+                    "type": "string"
+                  },
+                  "default_view_name": {
+                    "description": "Default view name.",
+                    "type": "string"
+                  },
+                  "fields": {
+                    "description": "Field list. Optional, but defining all fields when creating the table is strongly recommended to avoid adding them one by one. Omit it to create an empty table.",
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "required": [
+                        "field_name",
+                        "type"
+                      ],
+                      "properties": {
+                        "field_name": {
+                          "description": "Field name.",
+                          "type": "string"
+                        },
+                        "type": {
+                          "description": "Field type: 1=text, 2=number, 3=single select, 4=multiple select, 5=date, 7=checkbox, 11=person, 13=phone, 15=URL, 17=attachment, 1001=created time, 1002=modified time, and others.",
+                          "type": "number"
+                        },
+                        "property": {
+                          "description": "Field property configuration, which depends on the field type."
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "action",
+              "app_token"
+            ],
+            "properties": {
+              "action": {
+                "const": "list",
+                "type": "string"
+              },
+              "app_token": {
+                "description": "Bitable app token.",
+                "type": "string"
+              },
+              "page_size": {
+                "description": "Number of items per page (default: 50; maximum: 100).",
+                "type": "number"
+              },
+              "page_token": {
+                "description": "Pagination token.",
+                "type": "string"
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "action",
+              "app_token",
+              "table_id"
+            ],
+            "properties": {
+              "action": {
+                "const": "patch",
+                "type": "string"
+              },
+              "app_token": {
+                "description": "Bitable app token.",
+                "type": "string"
+              },
+              "table_id": {
+                "description": "Table ID.",
+                "type": "string"
+              },
+              "name": {
+                "description": "New table name.",
+                "type": "string"
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "action",
+              "app_token",
+              "tables"
+            ],
+            "properties": {
+              "action": {
+                "const": "batch_create",
+                "type": "string"
+              },
+              "app_token": {
+                "description": "Bitable app token.",
+                "type": "string"
+              },
+              "tables": {
+                "description": "Tables to create in the batch.",
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "required": [
+                    "name"
+                  ],
+                  "properties": {
+                    "name": {
+                      "description": "Table name.",
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        ]
+      },
+      "opts": {
+        "name": "feishu_bitable_app_table"
+      }
+    },
+    {
+      "name": "feishu_bitable_app_table_record",
+      "label": "Feishu Bitable Records",
+      "description": "Manage Feishu Bitable records (rows) **as the user**. Use it to create, query, update, delete, or search records.\n\nActions:\n- create: Create one record with the fields object.\n- batch_create: Create records with the records array.\n- list: List or search records.\n- update: Update one record.\n- delete: Delete one record.\n- batch_update: Update records in a batch.\n- batch_delete: Delete records in a batch.\n\nParameter distinction:\n- create uses a single fields object.\n- batch_create uses a records array.",
+      "parameters": {
+        "anyOf": [
+          {
+            "type": "object",
+            "required": [
+              "action",
+              "app_token",
+              "table_id",
+              "fields"
+            ],
+            "properties": {
+              "action": {
+                "const": "create",
+                "type": "string"
+              },
+              "app_token": {
+                "description": "Bitable app token.",
+                "type": "string"
+              },
+              "table_id": {
+                "description": "Table ID.",
+                "type": "string"
+              },
+              "fields": {
+                "additionalProperties": true,
+                "description": "Fields for one record. Keys are field names; values depend on field type:\n- Text: string\n- Number: number\n- Single select: string containing the option name\n- Multiple select: string[] containing option names\n- Date: number containing a millisecond timestamp, for example 1740441600000\n- Checkbox: boolean\n- Person: [{id: 'ou_xxx'}]\n- Attachment: [{file_token: 'xxx'}]\n\ncreate creates exactly one record. Use batch_create to create multiple records.",
+                "type": "object",
+                "properties": {}
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "action",
+              "app_token",
+              "table_id",
+              "record_id",
+              "fields"
+            ],
+            "properties": {
+              "action": {
+                "const": "update",
+                "type": "string"
+              },
+              "app_token": {
+                "description": "Bitable app token.",
+                "type": "string"
+              },
+              "table_id": {
+                "description": "Table ID.",
+                "type": "string"
+              },
+              "record_id": {
+                "description": "Record ID.",
+                "type": "string"
+              },
+              "fields": {
+                "additionalProperties": true,
+                "description": "Fields to update.",
+                "type": "object",
+                "properties": {}
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "action",
+              "app_token",
+              "table_id",
+              "record_id"
+            ],
+            "properties": {
+              "action": {
+                "const": "delete",
+                "type": "string"
+              },
+              "app_token": {
+                "description": "Bitable app token.",
+                "type": "string"
+              },
+              "table_id": {
+                "description": "Table ID.",
+                "type": "string"
+              },
+              "record_id": {
+                "description": "Record ID.",
+                "type": "string"
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "action",
+              "app_token",
+              "table_id",
+              "records"
+            ],
+            "properties": {
+              "action": {
+                "const": "batch_create",
+                "type": "string"
+              },
+              "app_token": {
+                "description": "Bitable app token.",
+                "type": "string"
+              },
+              "table_id": {
+                "description": "Table ID.",
+                "type": "string"
+              },
+              "records": {
+                "description": "Records to create, up to 500.",
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "required": [
+                    "fields"
+                  ],
+                  "properties": {
+                    "fields": {
+                      "additionalProperties": true,
+                      "type": "object",
+                      "properties": {}
+                    }
+                  }
+                }
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "action",
+              "app_token",
+              "table_id",
+              "records"
+            ],
+            "properties": {
+              "action": {
+                "const": "batch_update",
+                "type": "string"
+              },
+              "app_token": {
+                "description": "Bitable app token.",
+                "type": "string"
+              },
+              "table_id": {
+                "description": "Table ID.",
+                "type": "string"
+              },
+              "records": {
+                "description": "Records to update, up to 500.",
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "required": [
+                    "record_id",
+                    "fields"
+                  ],
+                  "properties": {
+                    "record_id": {
+                      "type": "string"
+                    },
+                    "fields": {
+                      "additionalProperties": true,
+                      "type": "object",
+                      "properties": {}
+                    }
+                  }
+                }
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "action",
+              "app_token",
+              "table_id",
+              "record_ids"
+            ],
+            "properties": {
+              "action": {
+                "const": "batch_delete",
+                "type": "string"
+              },
+              "app_token": {
+                "description": "Bitable app token.",
+                "type": "string"
+              },
+              "table_id": {
+                "description": "Table ID.",
+                "type": "string"
+              },
+              "record_ids": {
+                "description": "Record IDs to delete, up to 500.",
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "action",
+              "app_token",
+              "table_id"
+            ],
+            "properties": {
+              "action": {
+                "const": "list",
+                "type": "string"
+              },
+              "app_token": {
+                "description": "Bitable app token.",
+                "type": "string"
+              },
+              "table_id": {
+                "description": "Table ID.",
+                "type": "string"
+              },
+              "view_id": {
+                "description": "View ID. Optional, but recommended for better performance.",
+                "type": "string"
+              },
+              "field_names": {
+                "description": "Field names to return. Omit it to return all fields.",
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "filter": {
+                "description": "Structured filter object. Example: {conjunction: 'and', conditions: [{field_name: 'Status', operator: 'is', value: ['Active']}]}.",
+                "type": "object",
+                "required": [
+                  "conjunction",
+                  "conditions"
+                ],
+                "properties": {
+                  "conjunction": {
+                    "type": "string",
+                    "enum": [
+                      "and",
+                      "or"
+                    ],
+                    "description": "Condition logic: and requires all conditions; or requires any condition."
+                  },
+                  "conditions": {
+                    "description": "Filter conditions.",
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "required": [
+                        "field_name",
+                        "operator"
+                      ],
+                      "properties": {
+                        "field_name": {
+                          "description": "Field name.",
+                          "type": "string"
+                        },
+                        "operator": {
+                          "type": "string",
+                          "enum": [
+                            "is",
+                            "isNot",
+                            "contains",
+                            "doesNotContain",
+                            "isEmpty",
+                            "isNotEmpty",
+                            "isGreater",
+                            "isGreaterEqual",
+                            "isLess",
+                            "isLessEqual"
+                          ],
+                          "description": "Operator."
+                        },
+                        "value": {
+                          "description": "Condition value. May be omitted for isEmpty and isNotEmpty.",
+                          "type": "array",
+                          "items": {
+                            "type": "string"
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              },
+              "sort": {
+                "description": "Sort rules.",
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "required": [
+                    "field_name",
+                    "desc"
+                  ],
+                  "properties": {
+                    "field_name": {
+                      "description": "Field name to sort by.",
+                      "type": "string"
+                    },
+                    "desc": {
+                      "description": "Whether to sort in descending order.",
+                      "type": "boolean"
+                    }
+                  }
+                }
+              },
+              "automatic_fields": {
+                "description": "Whether to return automatic fields (created_time, last_modified_time, created_by, and last_modified_by). Default: false.",
+                "type": "boolean"
+              },
+              "page_size": {
+                "description": "Number of items per page (default: 50; maximum: 500).",
+                "type": "number"
+              },
+              "page_token": {
+                "description": "Pagination token.",
+                "type": "string"
+              }
+            }
+          }
+        ]
+      },
+      "opts": {
+        "name": "feishu_bitable_app_table_record"
+      }
+    },
+    {
+      "name": "feishu_bitable_app_table_field",
+      "label": "Feishu Bitable Fields",
+      "description": "Manage Feishu Bitable fields (columns) **as the user**. Use it to create, list, update, or delete fields and change the table structure. Actions: create, list, update (including renaming with only field_name), and delete.",
+      "parameters": {
+        "anyOf": [
+          {
+            "type": "object",
+            "required": [
+              "action",
+              "app_token",
+              "table_id",
+              "field_name",
+              "type"
+            ],
+            "properties": {
+              "action": {
+                "const": "create",
+                "type": "string"
+              },
+              "app_token": {
+                "description": "Bitable app token.",
+                "type": "string"
+              },
+              "table_id": {
+                "description": "Table ID.",
+                "type": "string"
+              },
+              "field_name": {
+                "description": "Field name.",
+                "type": "string"
+              },
+              "type": {
+                "description": "Field type: 1=text, 2=number, 3=single select, 4=multiple select, 5=date, 7=checkbox, 11=person, 13=phone, 15=URL, 17=attachment, 1001=created time, 1002=modified time, and others.",
+                "type": "number"
+              },
+              "property": {
+                "description": "Field property configuration, depending on the type; for example, select fields need options and number fields need formatter. **Important:** For a URL field (type=15), omit this parameter entirely. Even an empty object causes URLFieldPropertyError."
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "action",
+              "app_token",
+              "table_id"
+            ],
+            "properties": {
+              "action": {
+                "const": "list",
+                "type": "string"
+              },
+              "app_token": {
+                "description": "Bitable app token.",
+                "type": "string"
+              },
+              "table_id": {
+                "description": "Table ID.",
+                "type": "string"
+              },
+              "view_id": {
+                "description": "View ID (optional).",
+                "type": "string"
+              },
+              "page_size": {
+                "description": "Number of items per page (default: 50; maximum: 100).",
+                "type": "number"
+              },
+              "page_token": {
+                "description": "Pagination token.",
+                "type": "string"
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "action",
+              "app_token",
+              "table_id",
+              "field_id"
+            ],
+            "properties": {
+              "action": {
+                "const": "update",
+                "type": "string"
+              },
+              "app_token": {
+                "description": "Bitable app token.",
+                "type": "string"
+              },
+              "table_id": {
+                "description": "Table ID.",
+                "type": "string"
+              },
+              "field_id": {
+                "description": "Field ID.",
+                "type": "string"
+              },
+              "field_name": {
+                "description": "Field name. Omit it to leave the name unchanged.",
+                "type": "string"
+              },
+              "type": {
+                "description": "Field type. Omit it to retrieve the current type automatically. Values include 1=text, 2=number, 3=single select, 4=multiple select, 5=date, 7=checkbox, 11=person, 13=phone, 15=URL, and 17=attachment.",
+                "type": "number"
+              },
+              "property": {
+                "description": "Field property configuration. Omit it to retrieve the current configuration automatically."
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "action",
+              "app_token",
+              "table_id",
+              "field_id"
+            ],
+            "properties": {
+              "action": {
+                "const": "delete",
+                "type": "string"
+              },
+              "app_token": {
+                "description": "Bitable app token.",
+                "type": "string"
+              },
+              "table_id": {
+                "description": "Table ID.",
+                "type": "string"
+              },
+              "field_id": {
+                "description": "Field ID.",
+                "type": "string"
+              }
+            }
+          }
+        ]
+      },
+      "opts": {
+        "name": "feishu_bitable_app_table_field"
+      }
+    },
+    {
+      "name": "feishu_bitable_app_table_view",
+      "label": "Feishu Bitable Views",
+      "description": "Manage Feishu Bitable views **as the user**. Use it to create, retrieve, list, or update views and change presentation modes. Actions: create, get, list, and patch.",
+      "parameters": {
+        "anyOf": [
+          {
+            "type": "object",
+            "required": [
+              "action",
+              "app_token",
+              "table_id",
+              "view_name"
+            ],
+            "properties": {
+              "action": {
+                "const": "create",
+                "type": "string"
+              },
+              "app_token": {
+                "description": "Bitable app token.",
+                "type": "string"
+              },
+              "table_id": {
+                "description": "Table ID.",
+                "type": "string"
+              },
+              "view_name": {
+                "description": "View name.",
+                "type": "string"
+              },
+              "view_type": {
+                "anyOf": [
+                  {
+                    "const": "grid",
+                    "type": "string"
+                  },
+                  {
+                    "const": "kanban",
+                    "type": "string"
+                  },
+                  {
+                    "const": "gallery",
+                    "type": "string"
+                  },
+                  {
+                    "const": "gantt",
+                    "type": "string"
+                  },
+                  {
+                    "const": "form",
+                    "type": "string"
+                  }
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "action",
+              "app_token",
+              "table_id",
+              "view_id"
+            ],
+            "properties": {
+              "action": {
+                "const": "get",
+                "type": "string"
+              },
+              "app_token": {
+                "description": "Bitable app token.",
+                "type": "string"
+              },
+              "table_id": {
+                "description": "Table ID.",
+                "type": "string"
+              },
+              "view_id": {
+                "description": "View ID.",
+                "type": "string"
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "action",
+              "app_token",
+              "table_id"
+            ],
+            "properties": {
+              "action": {
+                "const": "list",
+                "type": "string"
+              },
+              "app_token": {
+                "description": "Bitable app token.",
+                "type": "string"
+              },
+              "table_id": {
+                "description": "Table ID.",
+                "type": "string"
+              },
+              "page_size": {
+                "description": "Number of items per page (default: 50; maximum: 100).",
+                "type": "number"
+              },
+              "page_token": {
+                "description": "Pagination token.",
+                "type": "string"
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "action",
+              "app_token",
+              "table_id",
+              "view_id"
+            ],
+            "properties": {
+              "action": {
+                "const": "patch",
+                "type": "string"
+              },
+              "app_token": {
+                "description": "Bitable app token.",
+                "type": "string"
+              },
+              "table_id": {
+                "description": "Table ID.",
+                "type": "string"
+              },
+              "view_id": {
+                "description": "View ID.",
+                "type": "string"
+              },
+              "view_name": {
+                "description": "New view name.",
+                "type": "string"
+              }
+            }
+          }
+        ]
+      },
+      "opts": {
+        "name": "feishu_bitable_app_table_view"
+      }
+    },
+    {
+      "name": "feishu_search_doc_wiki",
+      "label": "Feishu Document & Wiki Search",
+      "description": "Search Feishu Drive documents and Wiki content together **as the user**. Action: search.\n\nquery is the search keyword. filter is optional. Without filter, the tool searches all documents and Wiki content; when provided, the same filter applies to both. Filters support document type, creator, creation time, open time, and other dimensions. Results include highlighted title and summary fragments, with matching keywords wrapped in <h> tags.",
+      "parameters": {
+        "type": "object",
+        "required": [
+          "action"
+        ],
+        "properties": {
+          "action": {
+            "const": "search",
+            "type": "string"
+          },
+          "query": {
+            "description": "Search keyword (optional). Omit it or pass an empty string for an unqualified search, which can still use sorting and filters and defaults to recently viewed results.",
+            "maxLength": 50,
+            "type": "string"
+          },
+          "filter": {
+            "description": "Optional search filters. Without them, search all documents and Wiki content. When provided, the same filters apply to both.",
+            "type": "object",
+            "properties": {
+              "creator_ids": {
+                "description": "Creator OpenID list, up to 20 values.",
+                "maxItems": 20,
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "doc_types": {
+                "description": "Document types: DOC, SHEET, BITABLE, MINDNOTE, FILE, WIKI, DOCX, FOLDER (Drive folder), CATALOG (Wiki 2.0 folder), SLIDES, or SHORTCUT.",
+                "maxItems": 10,
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "enum": [
+                    "DOC",
+                    "SHEET",
+                    "BITABLE",
+                    "MINDNOTE",
+                    "FILE",
+                    "WIKI",
+                    "DOCX",
+                    "FOLDER",
+                    "CATALOG",
+                    "SLIDES",
+                    "SHORTCUT"
+                  ]
+                }
+              },
+              "only_title": {
+                "description": "Whether to search titles only. Default: false, which searches titles and body text.",
+                "type": "boolean"
+              },
+              "open_time": {
+                "type": "object",
+                "properties": {
+                  "start": {
+                    "description": "Range start in ISO 8601 / RFC 3339 format with a time zone, for example '2024-01-01T00:00:00+08:00'.",
+                    "type": "string"
+                  },
+                  "end": {
+                    "description": "Range end in ISO 8601 / RFC 3339 format with a time zone, for example '2024-01-01T00:00:00+08:00'.",
+                    "type": "string"
+                  }
+                }
+              },
+              "sort_type": {
+                "type": "string",
+                "enum": [
+                  "DEFAULT_TYPE",
+                  "OPEN_TIME",
+                  "EDIT_TIME",
+                  "EDIT_TIME_ASC",
+                  "CREATE_TIME"
+                ],
+                "description": "Sort order: EDIT_TIME for newest edits first (recommended), EDIT_TIME_ASC for oldest edits first, CREATE_TIME, OPEN_TIME, or DEFAULT_TYPE."
+              },
+              "create_time": {
+                "type": "object",
+                "properties": {
+                  "start": {
+                    "description": "Range start in ISO 8601 / RFC 3339 format with a time zone, for example '2024-01-01T00:00:00+08:00'.",
+                    "type": "string"
+                  },
+                  "end": {
+                    "description": "Range end in ISO 8601 / RFC 3339 format with a time zone, for example '2024-01-01T00:00:00+08:00'.",
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          },
+          "page_token": {
+            "description": "Pagination token. Omit it for the first request. When has_more is true, pass the returned page_token to retrieve the next page.",
+            "type": "string"
+          },
+          "page_size": {
+            "description": "Page size (default: 15; maximum: 20).",
+            "minimum": 0,
+            "maximum": 20,
+            "type": "integer"
+          }
+        }
+      },
+      "opts": {
+        "name": "feishu_search_doc_wiki"
+      }
+    },
+    {
+      "name": "feishu_drive_file",
+      "label": "Feishu Drive Files",
+      "description": "Manage files in Feishu Drive **as the user**. Use it to list Drive files, get file metadata, copy, move, delete, upload, or download files. Do not use this tool for files attached to IM messages.\n\nActions:\n- list: List files in a folder. Omit folder_token to list the root.\n- get_meta: Get document metadata in batches with request_docs, for example [{doc_token: '...', doc_type: 'sheet'}].\n- copy: Copy a file to a destination.\n- move: Move a file to a folder.\n- delete: Delete a file.\n- upload: Upload a local file to Drive with file_path or Base64 data in file_content_base64.\n- download: Download a file locally. With output_path, save it locally; otherwise, return Base64 content.\n\ncopy, move, and delete require file_token and type. get_meta uses request_docs.\nFor upload, prefer file_path, which reads the file and derives its name and size automatically. file_content_base64 is also supported but requires file_name and size.\nFor download, output_path may be a complete file path or a folder path combined with file_name. Without output_path, the tool returns Base64 content.",
+      "parameters": {
+        "anyOf": [
+          {
+            "type": "object",
+            "required": [
+              "action"
+            ],
+            "properties": {
+              "action": {
+                "const": "list",
+                "type": "string"
+              },
+              "folder_token": {
+                "description": "Folder token (optional). Omit it or pass an empty string to list the user's Drive root. Root mode does not support pagination or shortcuts.",
+                "type": "string"
+              },
+              "page_size": {
+                "description": "Page size (default and maximum: 200).",
+                "minimum": 1,
+                "maximum": 200,
+                "type": "integer"
+              },
+              "page_token": {
+                "description": "Pagination token. Omit it for the first request.",
+                "type": "string"
+              },
+              "order_by": {
+                "type": "string",
+                "enum": [
+                  "EditedTime",
+                  "CreatedTime"
+                ],
+                "description": "Sort field: EditedTime or CreatedTime."
+              },
+              "direction": {
+                "type": "string",
+                "enum": [
+                  "ASC",
+                  "DESC"
+                ],
+                "description": "Sort direction: ASC or DESC."
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "action",
+              "request_docs"
+            ],
+            "properties": {
+              "action": {
+                "const": "get_meta",
+                "type": "string"
+              },
+              "request_docs": {
+                "description": "Documents whose metadata to retrieve, up to 50. Example: [{doc_token: 'Z1FjxxxxxxxxxxxxxxxxxxxtnAc', doc_type: 'sheet'}].",
+                "minItems": 1,
+                "maxItems": 50,
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "required": [
+                    "doc_token",
+                    "doc_type"
+                  ],
+                  "properties": {
+                    "doc_token": {
+                      "description": "Document token from the browser URL, such as spreadsheet_token or doc_token.",
+                      "type": "string"
+                    },
+                    "doc_type": {
+                      "description": "Document type: doc, sheet, file, bitable, docx, folder, mindnote, or slides.",
+                      "anyOf": [
+                        {
+                          "const": "doc",
+                          "type": "string"
+                        },
+                        {
+                          "const": "sheet",
+                          "type": "string"
+                        },
+                        {
+                          "const": "file",
+                          "type": "string"
+                        },
+                        {
+                          "const": "bitable",
+                          "type": "string"
+                        },
+                        {
+                          "const": "docx",
+                          "type": "string"
+                        },
+                        {
+                          "const": "folder",
+                          "type": "string"
+                        },
+                        {
+                          "const": "mindnote",
+                          "type": "string"
+                        },
+                        {
+                          "const": "slides",
+                          "type": "string"
+                        }
+                      ]
+                    }
+                  }
+                }
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "action",
+              "file_token",
+              "name",
+              "type"
+            ],
+            "properties": {
+              "action": {
+                "const": "copy",
+                "type": "string"
+              },
+              "file_token": {
+                "description": "File token (required).",
+                "type": "string"
+              },
+              "name": {
+                "description": "Destination file name (required).",
+                "type": "string"
+              },
+              "type": {
+                "description": "Document type (required).",
+                "anyOf": [
+                  {
+                    "const": "doc",
+                    "type": "string"
+                  },
+                  {
+                    "const": "sheet",
+                    "type": "string"
+                  },
+                  {
+                    "const": "file",
+                    "type": "string"
+                  },
+                  {
+                    "const": "bitable",
+                    "type": "string"
+                  },
+                  {
+                    "const": "docx",
+                    "type": "string"
+                  },
+                  {
+                    "const": "folder",
+                    "type": "string"
+                  },
+                  {
+                    "const": "mindnote",
+                    "type": "string"
+                  },
+                  {
+                    "const": "slides",
+                    "type": "string"
+                  }
+                ]
+              },
+              "folder_token": {
+                "description": "Destination folder token. Omit it to copy to the My Space root.",
+                "type": "string"
+              },
+              "parent_node": {
+                "description": "Alias for folder_token. Retained for compatibility; prefer folder_token.",
+                "type": "string"
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "action",
+              "file_token",
+              "type",
+              "folder_token"
+            ],
+            "properties": {
+              "action": {
+                "const": "move",
+                "type": "string"
+              },
+              "file_token": {
+                "description": "File token (required).",
+                "type": "string"
+              },
+              "type": {
+                "description": "Document type (required).",
+                "anyOf": [
+                  {
+                    "const": "doc",
+                    "type": "string"
+                  },
+                  {
+                    "const": "sheet",
+                    "type": "string"
+                  },
+                  {
+                    "const": "file",
+                    "type": "string"
+                  },
+                  {
+                    "const": "bitable",
+                    "type": "string"
+                  },
+                  {
+                    "const": "docx",
+                    "type": "string"
+                  },
+                  {
+                    "const": "folder",
+                    "type": "string"
+                  },
+                  {
+                    "const": "mindnote",
+                    "type": "string"
+                  },
+                  {
+                    "const": "slides",
+                    "type": "string"
+                  }
+                ]
+              },
+              "folder_token": {
+                "description": "Destination folder token (required).",
+                "type": "string"
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "action",
+              "file_token",
+              "type"
+            ],
+            "properties": {
+              "action": {
+                "const": "delete",
+                "type": "string"
+              },
+              "file_token": {
+                "description": "File token (required).",
+                "type": "string"
+              },
+              "type": {
+                "description": "Document type (required).",
+                "anyOf": [
+                  {
+                    "const": "doc",
+                    "type": "string"
+                  },
+                  {
+                    "const": "sheet",
+                    "type": "string"
+                  },
+                  {
+                    "const": "file",
+                    "type": "string"
+                  },
+                  {
+                    "const": "bitable",
+                    "type": "string"
+                  },
+                  {
+                    "const": "docx",
+                    "type": "string"
+                  },
+                  {
+                    "const": "folder",
+                    "type": "string"
+                  },
+                  {
+                    "const": "mindnote",
+                    "type": "string"
+                  },
+                  {
+                    "const": "slides",
+                    "type": "string"
+                  }
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "action"
+            ],
+            "properties": {
+              "action": {
+                "const": "upload",
+                "type": "string"
+              },
+              "parent_node": {
+                "description": "Parent-node token (optional). For explorer, use a folder token; for bitable, use app_token. Omit it or pass an empty string to upload to the Drive root.",
+                "type": "string"
+              },
+              "file_path": {
+                "description": "Local file path. Provide exactly one of file_path and file_content_base64. Prefer this parameter; it reads the content and derives size and file name automatically.",
+                "type": "string"
+              },
+              "file_content_base64": {
+                "description": "Base64-encoded file content. Provide exactly one of file_path and file_content_base64. Use it when file_path is unavailable.",
+                "type": "string"
+              },
+              "file_name": {
+                "description": "File name (optional). It is derived automatically from file_path. It is required with file_content_base64.",
+                "type": "string"
+              },
+              "size": {
+                "description": "File size in bytes (optional). It is calculated automatically from file_path. It is required with file_content_base64.",
+                "type": "integer"
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "action",
+              "file_token"
+            ],
+            "properties": {
+              "action": {
+                "const": "download",
+                "type": "string"
+              },
+              "file_token": {
+                "description": "File token (required).",
+                "type": "string"
+              },
+              "output_path": {
+                "description": "Complete local destination path (optional), including file name and extension, for example '/tmp/file.pdf'. Omit it to return the file content as Base64.",
+                "type": "string"
+              }
+            }
+          }
+        ]
+      },
+      "opts": {
+        "name": "feishu_drive_file"
+      }
+    },
+    {
+      "name": "feishu_doc_comments",
+      "label": "Feishu: Doc Comments",
+      "description": "Manage comments on Feishu cloud documents **as the user**. Actions: list (comments with all replies), list_replies, create (whole-document comments with text, user mentions, and links), reply, and patch (resolve or reopen a comment). Wiki tokens are supported.",
+      "parameters": {
+        "type": "object",
+        "required": [
+          "action",
+          "file_token",
+          "file_type"
+        ],
+        "properties": {
+          "action": {
+            "type": "string",
+            "enum": [
+              "list",
+              "list_replies",
+              "create",
+              "reply",
+              "patch"
+            ]
+          },
+          "file_token": {
+            "description": "Cloud-document token or Wiki node token from a document URL. A Wiki token is resolved automatically to the document's obj_token.",
+            "type": "string"
+          },
+          "file_type": {
+            "type": "string",
+            "enum": [
+              "doc",
+              "docx",
+              "sheet",
+              "file",
+              "slides",
+              "wiki"
+            ],
+            "description": "Document type. wiki is resolved automatically to the actual document type, such as docx, sheet, or bitable."
+          },
+          "is_whole": {
+            "description": "Whether to return only whole-document comments. Optional for action=list.",
+            "type": "boolean"
+          },
+          "is_solved": {
+            "description": "Whether to return only resolved comments. Optional for action=list.",
+            "type": "boolean"
+          },
+          "page_size": {
+            "description": "Page size.",
+            "type": "integer"
+          },
+          "page_token": {
+            "description": "Pagination token.",
+            "type": "string"
+          },
+          "elements": {
+            "description": "Comment content elements, required for action=create and action=reply. Supported types are text, mention, and link.",
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": [
+                "type"
+              ],
+              "properties": {
+                "type": {
+                  "type": "string",
+                  "enum": [
+                    "text",
+                    "mention",
+                    "link"
+                  ]
+                },
+                "text": {
+                  "description": "Text content, required when type=text.",
+                  "type": "string"
+                },
+                "open_id": {
+                  "description": "open_id of the mentioned user, required when type=mention.",
+                  "type": "string"
+                },
+                "url": {
+                  "description": "Link URL, required when type=link.",
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "comment_id": {
+            "description": "Comment ID, required for action=list_replies, action=reply, and action=patch.",
+            "type": "string"
+          },
+          "is_solved_value": {
+            "description": "Resolved state, required for action=patch: true resolves the comment and false reopens it.",
+            "type": "boolean"
+          },
+          "user_id_type": {
+            "type": "string",
+            "enum": [
+              "open_id",
+              "union_id",
+              "user_id"
+            ]
+          }
+        }
+      },
+      "opts": {
+        "name": "feishu_doc_comments"
+      }
+    },
+    {
+      "name": "feishu_doc_media",
+      "label": "Feishu: Document Media",
+      "description": "Manage document media **as the user**. Supports two actions: (1) insert, which appends a local image or file to a Feishu document and requires a document ID plus a local file path; and (2) download, which saves a document resource or whiteboard thumbnail locally and requires a resource token plus an output path.\n\ninsert accepts only local file paths. For images at a URL, use the <image url=\"...\"/> syntax supported by create-doc and update-doc.",
+      "parameters": {
+        "anyOf": [
+          {
+            "type": "object",
+            "required": [
+              "action",
+              "doc_id",
+              "file_path"
+            ],
+            "properties": {
+              "action": {
+                "const": "insert",
+                "type": "string"
+              },
+              "doc_id": {
+                "description": "Document ID or URL (required). document_id is extracted from a URL automatically.",
+                "type": "string"
+              },
+              "file_path": {
+                "description": "Absolute local file path (required). Images may be jpg, png, gif, webp, and similar formats; files may use any format. Maximum size: 20 MB.",
+                "type": "string"
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "image",
+                  "file"
+                ],
+                "description": "Media type: \"image\" (default) or \"file\" (attachment)."
+              },
+              "align": {
+                "type": "string",
+                "enum": [
+                  "left",
+                  "center",
+                  "right"
+                ],
+                "description": "Alignment for images only: \"center\" (default), \"left\", or \"right\"."
+              },
+              "caption": {
+                "description": "Optional image caption or title.",
+                "type": "string"
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "action",
+              "resource_token",
+              "resource_type",
+              "output_path"
+            ],
+            "properties": {
+              "action": {
+                "const": "download",
+                "type": "string"
+              },
+              "resource_token": {
+                "description": "Unique resource identifier: file_token for document media or whiteboard_id for a whiteboard.",
+                "type": "string"
+              },
+              "resource_type": {
+                "type": "string",
+                "enum": [
+                  "media",
+                  "whiteboard"
+                ],
+                "description": "Resource type: media for document images, videos, files, and similar resources; or whiteboard for a whiteboard thumbnail."
+              },
+              "output_path": {
+                "description": "Complete local destination path. It may include an extension, for example /tmp/image.png. If it has no extension, the system derives one from Content-Type.",
+                "type": "string"
+              }
+            }
+          }
+        ]
+      },
+      "opts": {
+        "name": "feishu_doc_media"
+      }
+    },
+    {
+      "name": "feishu_wiki_space",
+      "label": "Feishu Wiki Spaces",
+      "description": "Manage Feishu Wiki spaces. Use it to list spaces, get space details, or create a space. Actions: list, get, and create. Obtain space_id from a browser URL or the list action. A space is the base container of a knowledge base and holds a hierarchy of document nodes.",
+      "parameters": {
+        "anyOf": [
+          {
+            "type": "object",
+            "required": [
+              "action"
+            ],
+            "properties": {
+              "action": {
+                "const": "list",
+                "type": "string"
+              },
+              "page_size": {
+                "description": "Page size (default: 10; maximum: 50).",
+                "minimum": 1,
+                "maximum": 50,
+                "type": "integer"
+              },
+              "page_token": {
+                "description": "Pagination token. Omit it for the first request.",
+                "type": "string"
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "action",
+              "space_id"
+            ],
+            "properties": {
+              "action": {
+                "const": "get",
+                "type": "string"
+              },
+              "space_id": {
+                "description": "Wiki space ID (required).",
+                "type": "string"
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "action"
+            ],
+            "properties": {
+              "action": {
+                "const": "create",
+                "type": "string"
+              },
+              "name": {
+                "description": "Wiki space name.",
+                "type": "string"
+              },
+              "description": {
+                "description": "Wiki space description.",
+                "type": "string"
+              }
+            }
+          }
+        ]
+      },
+      "opts": {
+        "name": "feishu_wiki_space"
+      }
+    },
+    {
+      "name": "feishu_wiki_space_node",
+      "label": "Feishu Wiki Space Nodes",
+      "description": "Manage Feishu Wiki nodes. Actions: list, get, create, move, and copy. Nodes are documents in a knowledge base, including doc, bitable, and sheet types. node_token uniquely identifies the Wiki node; obj_token identifies the underlying document. Use get to resolve a Wiki node_token to the underlying obj_token.",
+      "parameters": {
+        "anyOf": [
+          {
+            "type": "object",
+            "required": [
+              "action",
+              "space_id"
+            ],
+            "properties": {
+              "action": {
+                "const": "list",
+                "type": "string"
+              },
+              "space_id": {
+                "description": "space_id",
+                "type": "string"
+              },
+              "parent_node_token": {
+                "description": "parent_node_token",
+                "type": "string"
+              },
+              "page_size": {
+                "description": "page_size",
+                "minimum": 1,
+                "type": "integer"
+              },
+              "page_token": {
+                "description": "page_token",
+                "type": "string"
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "action",
+              "token"
+            ],
+            "properties": {
+              "action": {
+                "const": "get",
+                "type": "string"
+              },
+              "token": {
+                "description": "node token",
+                "type": "string"
+              },
+              "obj_type": {
+                "type": "string",
+                "enum": [
+                  "doc",
+                  "sheet",
+                  "mindnote",
+                  "bitable",
+                  "file",
+                  "docx",
+                  "slides",
+                  "wiki"
+                ],
+                "description": "obj_type"
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "action",
+              "space_id",
+              "obj_type",
+              "node_type"
+            ],
+            "properties": {
+              "action": {
+                "const": "create",
+                "type": "string"
+              },
+              "space_id": {
+                "description": "space_id",
+                "type": "string"
+              },
+              "obj_type": {
+                "type": "string",
+                "enum": [
+                  "sheet",
+                  "mindnote",
+                  "bitable",
+                  "file",
+                  "docx",
+                  "slides"
+                ],
+                "description": "obj_type"
+              },
+              "parent_node_token": {
+                "description": "parent_node_token",
+                "type": "string"
+              },
+              "node_type": {
+                "type": "string",
+                "enum": [
+                  "origin",
+                  "shortcut"
+                ],
+                "description": "node_type"
+              },
+              "origin_node_token": {
+                "description": "origin_node_token",
+                "type": "string"
+              },
+              "title": {
+                "description": "title",
+                "type": "string"
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "action",
+              "space_id",
+              "node_token"
+            ],
+            "properties": {
+              "action": {
+                "const": "move",
+                "type": "string"
+              },
+              "space_id": {
+                "description": "space_id",
+                "type": "string"
+              },
+              "node_token": {
+                "description": "node_token",
+                "type": "string"
+              },
+              "target_parent_token": {
+                "description": "target_parent_token",
+                "type": "string"
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "action",
+              "space_id",
+              "node_token"
+            ],
+            "properties": {
+              "action": {
+                "const": "copy",
+                "type": "string"
+              },
+              "space_id": {
+                "description": "space_id",
+                "type": "string"
+              },
+              "node_token": {
+                "description": "node_token",
+                "type": "string"
+              },
+              "target_space_id": {
+                "description": "target_space_id",
+                "type": "string"
+              },
+              "target_parent_token": {
+                "description": "target_parent_token",
+                "type": "string"
+              },
+              "title": {
+                "description": "title",
+                "type": "string"
+              }
+            }
+          }
+        ]
+      },
+      "opts": {
+        "name": "feishu_wiki_space_node"
+      }
+    },
+    {
+      "name": "feishu_sheet",
+      "label": "Feishu Spreadsheet",
+      "description": "Create, read, write, search, and export Feishu spreadsheets **as the user**.\n\nFeishu Sheets are similar to Excel or Google Sheets and are distinct from Bitable.\n\nEvery action except create accepts either url or spreadsheet_token and resolves it automatically. Wiki URLs are supported and resolve to spreadsheet tokens.\n\nActions:\n- info: Get spreadsheet details and all worksheets in one call, replacing get_info plus list_sheets.\n- read: Read data. Without range, read all data from the first worksheet.\n- write: Overwrite data. This is a high-risk operation; use it carefully. Without range, write to the first worksheet starting at A1.\n- append: Append rows after existing data.\n- find: Find cells in a worksheet.\n- create: Create a spreadsheet, optionally with headers and data in one call.\n- export: Export as xlsx or csv. csv requires sheet_id.",
+      "parameters": {
+        "anyOf": [
+          {
+            "type": "object",
+            "required": [
+              "action"
+            ],
+            "properties": {
+              "action": {
+                "const": "info",
+                "type": "string"
+              },
+              "url": {
+                "description": "Spreadsheet URL, for example https://xxx.feishu.cn/sheets/TOKEN or https://xxx.feishu.cn/wiki/TOKEN. Provide exactly one of url and spreadsheet_token.",
+                "type": "string"
+              },
+              "spreadsheet_token": {
+                "description": "Spreadsheet token. Provide exactly one of spreadsheet_token and url.",
+                "type": "string"
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "action"
+            ],
+            "properties": {
+              "action": {
+                "const": "read",
+                "type": "string"
+              },
+              "url": {
+                "description": "Spreadsheet URL, for example https://xxx.feishu.cn/sheets/TOKEN or https://xxx.feishu.cn/wiki/TOKEN. Provide exactly one of url and spreadsheet_token.",
+                "type": "string"
+              },
+              "spreadsheet_token": {
+                "description": "Spreadsheet token. Provide exactly one of spreadsheet_token and url.",
+                "type": "string"
+              },
+              "range": {
+                "description": "Read range (optional): <sheetId>!A1:D10 or <sheetId>, where sheetId comes from info. Omit it to read all data from the first worksheet.",
+                "type": "string"
+              },
+              "sheet_id": {
+                "description": "Worksheet ID (optional). Applies only when range is omitted. Omit it to use the first worksheet.",
+                "type": "string"
+              },
+              "value_render_option": {
+                "description": "Value rendering: ToString (default), FormattedValue, Formula, or UnformattedValue.",
+                "anyOf": [
+                  {
+                    "const": "ToString",
+                    "type": "string"
+                  },
+                  {
+                    "const": "FormattedValue",
+                    "type": "string"
+                  },
+                  {
+                    "const": "Formula",
+                    "type": "string"
+                  },
+                  {
+                    "const": "UnformattedValue",
+                    "type": "string"
+                  }
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "action",
+              "values"
+            ],
+            "properties": {
+              "action": {
+                "const": "write",
+                "type": "string"
+              },
+              "url": {
+                "description": "Spreadsheet URL, for example https://xxx.feishu.cn/sheets/TOKEN or https://xxx.feishu.cn/wiki/TOKEN. Provide exactly one of url and spreadsheet_token.",
+                "type": "string"
+              },
+              "spreadsheet_token": {
+                "description": "Spreadsheet token. Provide exactly one of spreadsheet_token and url.",
+                "type": "string"
+              },
+              "range": {
+                "description": "Write range (optional): <sheetId>!A1:D10, where sheetId comes from info. Omit it to write to the first worksheet starting at A1.",
+                "type": "string"
+              },
+              "sheet_id": {
+                "description": "Worksheet ID (optional). Applies only when range is omitted. Omit it to use the first worksheet.",
+                "type": "string"
+              },
+              "values": {
+                "description": "Two-dimensional array, with one array per row. Example: [[\"Name\",\"Age\"],[\"Alice\",25]].",
+                "type": "array",
+                "items": {
+                  "type": "array",
+                  "items": {}
+                }
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "action",
+              "values"
+            ],
+            "properties": {
+              "action": {
+                "const": "append",
+                "type": "string"
+              },
+              "url": {
+                "description": "Spreadsheet URL, for example https://xxx.feishu.cn/sheets/TOKEN or https://xxx.feishu.cn/wiki/TOKEN. Provide exactly one of url and spreadsheet_token.",
+                "type": "string"
+              },
+              "spreadsheet_token": {
+                "description": "Spreadsheet token. Provide exactly one of spreadsheet_token and url.",
+                "type": "string"
+              },
+              "range": {
+                "description": "Append range (optional), in the same format as write.range. Omit it to append after the data in the first worksheet.",
+                "type": "string"
+              },
+              "sheet_id": {
+                "description": "Worksheet ID (optional). Applies only when range is omitted.",
+                "type": "string"
+              },
+              "values": {
+                "description": "Two-dimensional array of rows to append.",
+                "type": "array",
+                "items": {
+                  "type": "array",
+                  "items": {}
+                }
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "action",
+              "sheet_id",
+              "find"
+            ],
+            "properties": {
+              "action": {
+                "const": "find",
+                "type": "string"
+              },
+              "url": {
+                "description": "Spreadsheet URL, for example https://xxx.feishu.cn/sheets/TOKEN or https://xxx.feishu.cn/wiki/TOKEN. Provide exactly one of url and spreadsheet_token.",
+                "type": "string"
+              },
+              "spreadsheet_token": {
+                "description": "Spreadsheet token. Provide exactly one of spreadsheet_token and url.",
+                "type": "string"
+              },
+              "sheet_id": {
+                "description": "Worksheet ID (required; obtain it with the info action).",
+                "type": "string"
+              },
+              "find": {
+                "description": "Text or regular expression to find.",
+                "type": "string"
+              },
+              "range": {
+                "description": "Search range in A1:D10 format without a sheetId prefix. Omit it to search the entire worksheet.",
+                "type": "string"
+              },
+              "match_case": {
+                "description": "Whether matching is case-sensitive (default: true).",
+                "type": "boolean"
+              },
+              "match_entire_cell": {
+                "description": "Whether to match the entire cell (default: false).",
+                "type": "boolean"
+              },
+              "search_by_regex": {
+                "description": "Whether to interpret find as a regular expression (default: false).",
+                "type": "boolean"
+              },
+              "include_formulas": {
+                "description": "Whether to search formulas (default: false).",
+                "type": "boolean"
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "action",
+              "title"
+            ],
+            "properties": {
+              "action": {
+                "const": "create",
+                "type": "string"
+              },
+              "title": {
+                "description": "Spreadsheet title.",
+                "type": "string"
+              },
+              "folder_token": {
+                "description": "Folder token (optional). Omit it to create the spreadsheet in the My Space root.",
+                "type": "string"
+              },
+              "headers": {
+                "description": "Header names (optional), for example [\"Name\", \"Department\", \"Start date\"]. When provided, they are written to the first row.",
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "data": {
+                "description": "Initial rows (optional), written after the headers. Example: [[\"Alice\", \"Engineering\", \"2026-01-01\"]].",
+                "type": "array",
+                "items": {
+                  "type": "array",
+                  "items": {}
+                }
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "action",
+              "file_extension"
+            ],
+            "properties": {
+              "action": {
+                "const": "export",
+                "type": "string"
+              },
+              "url": {
+                "description": "Spreadsheet URL, for example https://xxx.feishu.cn/sheets/TOKEN or https://xxx.feishu.cn/wiki/TOKEN. Provide exactly one of url and spreadsheet_token.",
+                "type": "string"
+              },
+              "spreadsheet_token": {
+                "description": "Spreadsheet token. Provide exactly one of spreadsheet_token and url.",
+                "type": "string"
+              },
+              "file_extension": {
+                "type": "string",
+                "enum": [
+                  "xlsx",
+                  "csv"
+                ],
+                "description": "Export format: xlsx or csv."
+              },
+              "output_path": {
+                "description": "Local destination path including the file name. Omit it to return only file metadata.",
+                "type": "string"
+              },
+              "sheet_id": {
+                "description": "Worksheet ID. Required for CSV because CSV exports one worksheet at a time; optional for xlsx.",
+                "type": "string"
+              }
+            }
+          }
+        ]
+      },
+      "opts": {
+        "name": "feishu_sheet"
+      }
+    },
+    {
+      "name": "feishu_im_bot_image",
+      "label": "Feishu: IM Bot Image Download",
+      "description": "Download an image or file from a Feishu IM message to a local file **as the bot**.\n\nUse this tool for resources in the current conversation context: messages sent directly to the bot, quoted messages, and images or files in group messages received by the bot. In other words, use it for message_id and image_key or file_key values present in the current context.\nFor a quoted message, extract message_id from [message_id=om_xxx] in the context; do not ask the user for it.\n\nFiles are saved automatically under /tmp/openclaw/. The returned saved_path is the actual local path.",
+      "parameters": {
+        "type": "object",
+        "required": [
+          "message_id",
+          "file_key",
+          "type"
+        ],
+        "properties": {
+          "message_id": {
+            "description": "Message ID in om_xxx format. For a quoted message, extract it from [message_id=om_xxx] in the context.",
+            "type": "string"
+          },
+          "file_key": {
+            "description": "Resource key: image_key (img_xxx) for an image message or file_key (file_xxx) for a file message.",
+            "type": "string"
+          },
+          "type": {
+            "type": "string",
+            "enum": [
+              "image",
+              "file"
+            ],
+            "description": "Resource type: image for an image message, or file for a file, audio, or video message."
+          }
+        }
+      },
+      "opts": {
+        "name": "feishu_im_bot_image"
+      }
+    },
+    {
+      "name": "feishu_fetch_doc",
+      "label": "Feishu MCP: fetch-doc",
+      "description": "Fetch a Feishu cloud document and return its title and Markdown content. Supports pagination for large documents.",
+      "parameters": {
+        "type": "object",
+        "required": [
+          "doc_id"
+        ],
+        "properties": {
+          "doc_id": {
+            "description": "Document ID or URL; URLs are parsed automatically.",
+            "type": "string"
+          },
+          "offset": {
+            "description": "Character offset (optional; default: 0), used to paginate a large document.",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "limit": {
+            "description": "Maximum number of characters to return (optional). Use it only when the user explicitly asks for pagination.",
+            "minimum": 1,
+            "type": "integer"
+          }
+        }
+      },
+      "opts": {
+        "name": "feishu_fetch_doc"
+      }
+    },
+    {
+      "name": "feishu_create_doc",
+      "label": "Feishu MCP: create-doc",
+      "description": "Create a cloud document from Markdown. Supports querying an asynchronous task_id.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "markdown": {
+            "description": "Markdown content.",
+            "type": "string"
+          },
+          "title": {
+            "description": "Document title.",
+            "type": "string"
+          },
+          "folder_token": {
+            "description": "Parent folder token (optional).",
+            "type": "string"
+          },
+          "wiki_node": {
+            "description": "Wiki node token or URL (optional). When provided, create the document under that node.",
+            "type": "string"
+          },
+          "wiki_space": {
+            "description": "Wiki space ID (optional); my_library is a special supported value.",
+            "type": "string"
+          },
+          "task_id": {
+            "description": "Asynchronous task ID. When provided, query the task status instead of creating a new document.",
+            "type": "string"
+          }
+        }
+      },
+      "opts": {
+        "name": "feishu_create_doc"
+      }
+    },
+    {
+      "name": "feishu_update_doc",
+      "label": "Feishu MCP: update-doc",
+      "description": "Update a cloud document with overwrite, append, replace_range, replace_all, insert_before, insert_after, or delete_range. Supports querying an asynchronous task_id.",
+      "parameters": {
+        "type": "object",
+        "required": [
+          "mode"
+        ],
+        "properties": {
+          "doc_id": {
+            "description": "Document ID or URL.",
+            "type": "string"
+          },
+          "markdown": {
+            "description": "Markdown content.",
+            "type": "string"
+          },
+          "mode": {
+            "description": "Update mode (required).",
+            "anyOf": [
+              {
+                "const": "overwrite",
+                "type": "string"
+              },
+              {
+                "const": "append",
+                "type": "string"
+              },
+              {
+                "const": "replace_range",
+                "type": "string"
+              },
+              {
+                "const": "replace_all",
+                "type": "string"
+              },
+              {
+                "const": "insert_before",
+                "type": "string"
+              },
+              {
+                "const": "insert_after",
+                "type": "string"
+              },
+              {
+                "const": "delete_range",
+                "type": "string"
+              }
+            ]
+          },
+          "selection_with_ellipsis": {
+            "description": "Selection expression in the form beginning...ending. Provide exactly one of selection_with_ellipsis and selection_by_title.",
+            "type": "string"
+          },
+          "selection_by_title": {
+            "description": "Heading selection, for example ## Section title. Provide exactly one of selection_by_title and selection_with_ellipsis.",
+            "type": "string"
+          },
+          "new_title": {
+            "description": "New document title (optional).",
+            "type": "string"
+          },
+          "task_id": {
+            "description": "Asynchronous task ID used to query task status.",
+            "type": "string"
+          }
+        }
+      },
+      "opts": {
+        "name": "feishu_update_doc"
+      }
+    },
+    {
+      "name": "feishu_oauth",
+      "label": "Feishu OAuth",
+      "description": "Revoke Feishu user authorization. Call revoke only when the user explicitly asks to \"revoke authorization\", \"cancel authorization\", \"sign out\", or \"clear authorization\". Never call this tool when the user asks to \"reauthorize\", \"start authorization\", or \"start again\", or reports that authorization failed or expired. The system handles authorization automatically without manual intervention. Do not pass user_open_id; the system gets the current user from the message context.",
+      "parameters": {
+        "description": "Revoke Feishu user authorization. Call it only when the user explicitly asks to \"revoke authorization\", \"cancel authorization\", \"sign out\", or \"clear authorization\". Never call it when the user asks to \"reauthorize\", \"start authorization\", or \"start again\", or reports that authorization failed or expired. The system handles authorization automatically.",
+        "type": "object",
+        "required": [
+          "action"
+        ],
+        "properties": {
+          "action": {
+            "description": "revoke: Remove the current user's saved authorization credentials.",
+            "const": "revoke",
+            "type": "string"
+          }
+        }
+      },
+      "opts": {
+        "name": "feishu_oauth"
+      }
+    },
+    {
+      "name": "feishu_oauth_batch_auth",
+      "label": "Feishu: OAuth Batch Authorization",
+      "description": "Authorize all user permissions enabled for the Feishu app in one operation. Use only when the user explicitly asks to \"authorize all permissions\" or \"authorize everything at once\".",
+      "parameters": {
+        "description": "Authorize all user permissions enabled for the Feishu app in one operation using User Access Token scopes. Use only when the user explicitly asks to \"authorize all permissions\" or \"complete authorization at once\". Do not proactively recommend this tool.",
+        "type": "object",
+        "properties": {}
+      },
+      "opts": {
+        "name": "feishu_oauth_batch_auth"
+      }
+    },
+    {
+      "name": "feishu_ask_user_question",
+      "label": "Ask User Question",
+      "description": "Ask the user a question via an interactive Feishu card. Returns immediately after sending the card. The user's answers will arrive as a new message in the conversation. Do NOT poll or re-call this tool — just wait for the response message. For selection questions, provide options (renders as dropdown). For free-text input, set options to an empty array.",
+      "parameters": {
+        "type": "object",
+        "required": [
+          "questions"
+        ],
+        "properties": {
+          "questions": {
+            "description": "Questions to ask the user (1-6 questions)",
+            "minItems": 1,
+            "maxItems": 6,
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": [
+                "question",
+                "header",
+                "options",
+                "multiSelect"
+              ],
+              "properties": {
+                "question": {
+                  "description": "The question to ask the user",
+                  "type": "string"
+                },
+                "header": {
+                  "description": "Short label for the question (max 12 chars)",
+                  "type": "string"
+                },
+                "options": {
+                  "description": "Available choices. Renders as a dropdown. Leave empty ([]) for free-text input — the user will see a text field instead.",
+                  "maxItems": 10,
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "required": [
+                      "label",
+                      "description"
+                    ],
+                    "properties": {
+                      "label": {
+                        "description": "Display text for this option",
+                        "type": "string"
+                      },
+                      "description": {
+                        "description": "Explanation of what this option means",
+                        "type": "string"
+                      }
+                    }
+                  }
+                },
+                "multiSelect": {
+                  "description": "Whether multiple options can be selected (ignored when options is empty)",
+                  "type": "boolean"
+                },
+                "selectStyle": {
+                  "description": "For multi-select questions only: \"dropdown\" (default, compact multi-select dropdown) or \"checkbox\" (each option shown as a separate checkbox row, so the user can see all selected options at a glance before submitting). Ignored for single-select and free-text questions.",
+                  "anyOf": [
+                    {
+                      "const": "dropdown",
+                      "type": "string"
+                    },
+                    {
+                      "const": "checkbox",
+                      "type": "string"
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  ]
+}

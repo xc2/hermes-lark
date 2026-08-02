@@ -1,0 +1,56 @@
+name: feishu-platform
+label: Feishu / Lark
+kind: platform
+version: 0.1.0
+description: >
+  Feishu / Lark platform plugin for Hermes Agent, aligned with the
+  larksuite/openclaw-lark channel behavior.
+author: hermes-lark contributors
+requires_env:
+  - name: FEISHU_APP_ID
+    description: "Feishu/Lark app ID"
+    prompt: "Feishu App ID"
+    url: "https://open.feishu.cn/"
+    password: false
+  - name: FEISHU_APP_SECRET
+    description: "Feishu/Lark app secret"
+    prompt: "Feishu App Secret"
+    url: "https://open.feishu.cn/"
+    password: true
+optional_env:
+  - name: FEISHU_DOMAIN
+    description: "Domain: 'feishu' (China) or 'lark' (International)"
+    prompt: "Domain (feishu/lark)"
+    password: false
+  - name: FEISHU_CONNECTION_MODE
+    description: "Connection mode: 'websocket'"
+    prompt: "Connection mode (websocket)"
+    password: false
+  - name: FEISHU_ALLOWED_USERS
+    description: "Comma-separated Feishu user IDs allowed to talk to the bot"
+    prompt: "Allowed users (comma-separated)"
+    password: false
+  - name: FEISHU_ALLOW_ALL_USERS
+    description: "Allow any Feishu user to trigger the bot (development only)"
+    prompt: "Allow all users? (true/false)"
+    password: false
+  - name: FEISHU_GROUP_POLICY
+    description: "Default group sender policy: open, allowlist, blacklist, admin_only, or disabled"
+    prompt: "Default group policy"
+    password: false
+  - name: FEISHU_ALLOW_BOTS
+    description: "Bot sender policy: none, mentions, or all"
+    prompt: "Allow messages from bots"
+    password: false
+  - name: FEISHU_REQUIRE_MENTION
+    description: "Legacy compatibility key; group roots always require a mention"
+    prompt: "Legacy group mention setting (ignored)"
+    password: false
+  - name: FEISHU_HOME_CHANNEL
+    description: "Default chat ID for cron and notification delivery"
+    prompt: "Home channel ID"
+    password: false
+  - name: FEISHU_HOME_CHANNEL_NAME
+    description: "Display name for the Feishu home channel"
+    prompt: "Home channel display name"
+    password: false
