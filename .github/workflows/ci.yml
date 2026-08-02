@@ -76,6 +76,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 30
     permissions:
+      actions: read
       security-events: write
       packages: read
       contents: read
