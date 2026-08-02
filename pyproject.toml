@@ -39,7 +39,7 @@ dev = [
   "build>=1.2,<2",
   "PyYAML>=6,<7",
   "ruff>=0.9,<1",
-  "twine>=6,<7",
+  "twine>=6,<8",
 ]
 
 [project.urls]
