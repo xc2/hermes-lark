@@ -18,6 +18,7 @@ REQUIRED_WHEEL_SUFFIXES = {
     "hermes_lark/node/openclaw_tools_bridge.mjs.sha256",
     "hermes_lark/permissions/e2e.json",
     "hermes_lark/permissions/production.json",
+    "hermes_lark/permissions/skills.json",
     "hermes_lark/plugin.yaml",
     "hermes_lark/skills/feishu-channel-rules/SKILL.md",
     "hermes_lark/THIRD_PARTY_NOTICES.md",
@@ -40,6 +41,7 @@ REQUIRED_SDIST_SUFFIXES = {
     "docs/PARITY.md",
     "permissions/e2e.json",
     "permissions/production.json",
+    "permissions/skills.json",
     "tests/e2e/README.md",
     "tests/test_parity_contract.py",
 }

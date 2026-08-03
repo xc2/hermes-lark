@@ -9,12 +9,13 @@ from typing import Any
 
 
 class PermissionManifestTests(unittest.TestCase):
-    """Keep production and live-E2E application scopes intentional."""
+    """Keep production, skill, and live-E2E application scopes intentional."""
 
     @classmethod
     def setUpClass(cls) -> None:
-        """Load both manifests once for contract comparisons."""
+        """Load the manifests once for contract comparisons."""
         cls.production = cls._read_manifest("production.json")
+        cls.skills = cls._read_manifest("skills.json")
         cls.e2e = cls._read_manifest("e2e.json")
 
     @staticmethod
@@ -38,9 +39,19 @@ class PermissionManifestTests(unittest.TestCase):
 
     def test_scope_arrays_are_sorted_and_unique(self) -> None:
         """Keep imports deterministic and reviewable."""
-        for manifest in (self.production, self.e2e):
+        for manifest in (self.production, self.skills, self.e2e):
             for scopes in manifest.values():
                 self.assertEqual(scopes, sorted(set(scopes)))
+
+    def test_skills_supplement_is_user_only_and_disjoint(self) -> None:
+        """Keep the optional skill grant separate from the production baseline."""
+        self.assertEqual(self.skills["tenant"], [])
+        self.assertTrue(self.skills["user"])
+        self.assertNotIn("offline_access", self.skills["user"])
+        for identity in ("tenant", "user"):
+            self.assertFalse(
+                set(self.skills[identity]) & set(self.production[identity])
+            )
 
     def test_production_includes_pinned_upstream_runtime_scopes(self) -> None:
         """Cover the app scopes required by the pinned OpenClaw source."""

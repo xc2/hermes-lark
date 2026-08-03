@@ -1,7 +1,7 @@
 # Permission manifests
 
-This directory contains importable Feishu/Lark permission manifests for two
-different trust boundaries.
+This directory contains importable Feishu/Lark permission manifests for the
+production baseline, bundled skills, and isolated E2E application.
 
 ## `production.json`
 
@@ -22,6 +22,21 @@ task, Base, Drive, and IM operation up front.
 already enabled for the application; they do not add new application
 permissions. The checked-in `offline_access` user scope allows the normal
 refresh-token flow once a user grants an operational scope.
+
+## `skills.json`
+
+Import this optional supplement after `production.json` when every operation
+referenced by the bundled skills should be available without adding
+application scopes on demand. It contains only operational user scopes that
+are absent from the production user-scope baseline; `offline_access` remains
+in `production.json`.
+
+Permissions are identity-specific. A scope string that already appears under
+`production.json`'s `tenant` array may therefore also appear under this file's
+`user` array without duplicating the same grant.
+
+The supplement follows the complete tool families referenced by the skills.
+Remove scopes for skill actions that your deployment will not use.
 
 ## `e2e.json`
 

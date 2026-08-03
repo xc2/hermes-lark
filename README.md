@@ -88,9 +88,12 @@ cron destinations, and `feishu:<chat_id>` addresses do not need to be renamed.
    [Feishu Open Platform](https://open.feishu.cn/) or
    [Lark Developer](https://open.larksuite.com/).
 2. Enable bot capability.
-3. Import the appropriate baseline permission manifest:
+3. Import the appropriate permission manifest:
    - [`permissions/production.json`](https://github.com/xc2/hermes-lark/blob/main/permissions/production.json) for normal
      deployments. Tool-specific user scopes are enabled only when needed.
+   - Optionally import [`permissions/skills.json`](https://github.com/xc2/hermes-lark/blob/main/permissions/skills.json)
+     after the production baseline to pre-enable the user scopes used by all
+     bundled skills.
    - [`permissions/e2e.json`](https://github.com/xc2/hermes-lark/blob/main/permissions/e2e.json) only for the isolated test
      application.
 4. Subscribe to the events and callback listed below for the features you use.
