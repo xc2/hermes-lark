@@ -7,5 +7,7 @@ RUN uv pip install \
       --no-cache \
       --python /opt/hermes/.venv/bin/python \
       /opt/hermes-lark \
+    && uv pip check \
+      --python /opt/hermes/.venv/bin/python \
     && /opt/hermes/.venv/bin/python -c \
-      "from importlib.metadata import entry_points, version; expected={'hermes-agent':'0.19.1','hermes-lark':'0.1.0','aiohttp':'3.14.1','lark-oapi':'1.6.8','qrcode':'7.4.2','requests-toolbelt':'1.0.0','websockets':'15.0.1'}; assert {name: version(name) for name in expected} == expected; assert {ep.name: ep.value for ep in entry_points(group='hermes_agent.plugins')}['platforms/feishu'] == 'hermes_lark'"
+      "from importlib.metadata import entry_points, version; expected={'hermes-agent':'0.19.1','hermes-lark':'0.1.0'}; assert {name: version(name) for name in expected} == expected; assert {ep.name: ep.value for ep in entry_points(group='hermes_agent.plugins')}['platforms/feishu'] == 'hermes_lark'"

@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import asyncio
+import contextlib
+import io
 import sys
 import threading
 import unittest
@@ -140,6 +142,16 @@ class OAuthAdapterTests(unittest.IsolatedAsyncioTestCase):
             self.tools._interaction_hosts.clear()
             self.tools._interaction_expiry_hosts.clear()
             self.tools._interaction_expiry_timers.clear()
+
+    def test_device_authorization_qr_uses_installed_renderer(self) -> None:
+        output = io.StringIO()
+        with contextlib.redirect_stdout(output):
+            rendered = self.adapter_module._render_qr(
+                "https://accounts.example/verify?code=user"
+            )
+
+        self.assertTrue(rendered)
+        self.assertGreater(len(output.getvalue().strip()), 100)
 
     def _new_adapter(self) -> Any:
         adapter = object.__new__(self.adapter_module.FeishuAdapter)
