@@ -264,6 +264,49 @@ class FeishuInChannelCommandTests(unittest.TestCase):
         self.assertEqual(interaction.ticket.chat_id, "oc_work")
         self.assertEqual(interaction.ticket.sender_open_id, "ou_work")
 
+    def test_auth_routes_sources_from_hosts_without_transport_provenance(
+        self,
+    ) -> None:
+        """The Feishu adapter supplies provenance missing from older hosts."""
+        adapter = object.__new__(self.adapter.FeishuAdapter)
+        adapter.platform = self.adapter.Platform.FEISHU
+        adapter._account_id = "work"
+        adapter._namespace_account = False
+        adapter._profile_scope_key = "/hermes/profiles/coder"
+
+        source = adapter.build_source(
+            "oc_work",
+            chat_type="dm",
+            user_id="ou_work",
+            scope_id="work",
+        )
+        ticket = self.tools.ticket_from_event(
+            SimpleNamespace(
+                source=source,
+                message_id="om_work",
+                raw_message=SimpleNamespace(
+                    sender=SimpleNamespace(
+                        sender_id=SimpleNamespace(open_id="ou_work")
+                    )
+                ),
+            ),
+            "session-work",
+        )
+        calls: list[object] = []
+        self.tools.register_interaction_host(
+            "work",
+            lambda interaction: calls.append(interaction) is None,
+            profile_scope="/hermes/profiles/coder",
+        )
+        self.commands.bind_gateway_command_ticket(ticket)
+
+        result = asyncio.run(self.commands._handle_auth(""))
+
+        self.assertIs(source._transport_adapter_ref(), adapter)
+        self.assertEqual(ticket.profile_scope, "/hermes/profiles/coder")
+        self.assertIn("not complete", result)
+        self.assertEqual(len(calls), 1)
+
     def test_auth_without_live_host_reports_failure_not_success(self) -> None:
         """An unavailable interaction host cannot be described as authorized."""
         self.commands.bind_gateway_command_ticket(self._ticket())

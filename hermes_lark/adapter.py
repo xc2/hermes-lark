@@ -65,6 +65,7 @@ import re
 import threading
 import time
 import uuid
+import weakref
 from collections import OrderedDict
 from collections.abc import Mapping
 from dataclasses import dataclass, field
@@ -2131,6 +2132,8 @@ class FeishuAdapter(BasePlatformAdapter):
         if scope_pairing_identity:
             kwargs["user_id"] = f"{self._account_id}::{raw_user_id}"
         source = super().build_source(chat_id, **kwargs)
+        if not callable(getattr(source, "_transport_adapter_ref", None)):
+            source._transport_adapter_ref = weakref.ref(self)
         if scope_pairing_identity:
             source.feishu_user_id = str(raw_user_id)
             source.feishu_user_id_alt = raw_user_id_alt
@@ -3675,6 +3678,20 @@ class FeishuAdapter(BasePlatformAdapter):
 
     async def _start_cardkit_turn(self, event: MessageEvent) -> Optional[Any]:
         """Create and send the Thinking card for one admitted Feishu turn."""
+        command_parts = str(getattr(event, "text", "") or "").lstrip().split(maxsplit=1)
+        command_key = (
+            command_parts[0].split("@", 1)[0].lower().replace("_", "-")
+            if command_parts
+            else ""
+        )
+        if command_key in {
+            "/feishu",
+            "/feishu-auth",
+            "/feishu-diagnose",
+            "/feishu-doctor",
+        }:
+            return None
+
         from .cardkit import (
             CARDKIT_BATCH_AFTER_GAP_SECONDS,
             CARDKIT_LONG_GAP_SECONDS,
