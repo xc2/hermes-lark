@@ -163,6 +163,57 @@ class CardKitAdapterTests(unittest.TestCase):
             {"zh_cn": "✅ **Complete**", "en_us": "✅ **Complete**"},
         )
 
+    def test_direct_plugin_commands_skip_cardkit_without_disabling_skill_commands(
+        self,
+    ) -> None:
+        adapter, calls = self._adapter()
+        adapter._finalize_send_result = lambda *_args: SimpleNamespace(
+            success=True,
+            message_id="om_diagnostics",
+        )
+
+        async def scenario() -> None:
+            for command in (
+                "/feishu",
+                "/feishu-auth",
+                "/feishu-diagnose",
+                "/feishu-doctor",
+                "/feishu_auth",
+                "/feishu_diagnose",
+                "/feishu_doctor",
+            ):
+                event = self._event()
+                event.text = f"{command} details"
+                event.message_type = self.adapter_module.MessageType.COMMAND
+                self.assertIsNone(await adapter._start_cardkit_turn(event))
+
+            normalized_command = self._event()
+            normalized_command.text = "  /FEISHU_DOCTOR@bot details"
+            normalized_command.message_type = self.adapter_module.MessageType.TEXT
+            self.assertIsNone(await adapter._start_cardkit_turn(normalized_command))
+
+            result = await adapter.send(
+                "oc_chat",
+                "### Feishu Plugin Diagnostics\n\nOverall status: **HEALTHY**",
+                reply_to="om_root",
+                metadata={"thread_id": "om_root", "notify": True},
+            )
+            self.assertTrue(result.success)
+
+            agent_command = self._event()
+            agent_command.text = "/feishu-task list my tasks"
+            agent_command.message_type = self.adapter_module.MessageType.COMMAND
+            self.assertIsNotNone(await adapter._start_cardkit_turn(agent_command))
+
+        asyncio.run(scenario())
+
+        sends = [call for call in calls if call[0] == "send"]
+        self.assertEqual(len(sends), 2)
+        self.assertEqual(sends[0][1]["msg_type"], "post")
+        self.assertIn("Feishu Plugin Diagnostics", sends[0][1]["payload"])
+        self.assertEqual(sends[1][1]["msg_type"], "interactive")
+        self.assertFalse(any(call[0] == "update" for call in calls))
+
     def test_tool_lifecycle_updates_the_active_conversation_card(self) -> None:
         adapter, calls = self._adapter()
         ticket = self.tools.ToolTicket(
