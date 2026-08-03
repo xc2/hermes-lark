@@ -31,7 +31,7 @@ dependencies = [
   "lark-oapi==1.7.1",
   "qrcode==8.2",
   "requests-toolbelt==1.0.0",
-  "websockets==15.0.1",
+  "websockets==17.0",
 ]
 
 [project.optional-dependencies]
