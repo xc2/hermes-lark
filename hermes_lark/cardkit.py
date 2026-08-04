@@ -17,6 +17,10 @@ from typing import Any, Optional
 STREAMING_ELEMENT_ID = "streaming_content"
 
 
+# Card element containing interim commentary and long-running status text.
+PROGRESS_ELEMENT_ID = "progress_content"
+
+
 # Stable element IDs used to observe the CardKit lifecycle in live E2E traces.
 LIFECYCLE_ELEMENT_ID = "lifecycle_status"
 LOADING_ELEMENT_ID = "loading_icon"
@@ -254,6 +258,8 @@ class CardKitConversationState:
     card_id: str = ""
     message_id: str = ""
     content: str = ""
+    progress_content: str = ""
+    heartbeat_content: str = ""
     last_flushed_content: str = ""
     tools: dict[str, Any] = field(default_factory=dict)
     closed: bool = False
@@ -598,6 +604,8 @@ def _build_lifecycle_card(
     content: str,
     streaming: bool,
     tools: Optional[Mapping[str, Any]],
+    progress_content: str = "",
+    heartbeat_content: str = "",
 ) -> dict[str, Any]:
     """Build one full CardKit lifecycle snapshot."""
     visible_content = (
@@ -617,6 +625,22 @@ def _build_lifecycle_card(
     ]
     if tools:
         elements.append(_build_tool_panel(tools, expanded=streaming))
+    progress_parts = [
+        value.strip()
+        for value in (progress_content, heartbeat_content)
+        if value.strip()
+    ]
+    if streaming and progress_parts:
+        elements.append(
+            {
+                "tag": "markdown",
+                "content": "\n\n".join(progress_parts),
+                "text_align": "left",
+                "text_size": "notation",
+                "margin": "0px 0px 0px 0px",
+                "element_id": PROGRESS_ELEMENT_ID,
+            }
+        )
     elements.append(
         {
             "tag": "markdown",
@@ -663,6 +687,8 @@ def build_generating_card(
     content: str,
     *,
     tools: Optional[Mapping[str, Any]] = None,
+    progress_content: str = "",
+    heartbeat_content: str = "",
 ) -> dict[str, Any]:
     """Build a streaming full-card snapshot while output is being generated."""
     return _build_lifecycle_card(
@@ -673,6 +699,8 @@ def build_generating_card(
         content=content,
         streaming=True,
         tools=tools,
+        progress_content=progress_content,
+        heartbeat_content=heartbeat_content,
     )
 
 

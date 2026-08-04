@@ -199,6 +199,11 @@ turn creates one CardKit entity and one thread message. The card moves through
 Thinking, Generating, tool-running/tool-complete, and Complete/Error states
 while the response body is updated cumulatively.
 
+While the turn is active, Hermes interim assistant messages and the latest
+default `⏳ Working` notification appear in the Generating body instead of
+creating separate Feishu messages. The final answer replaces that progress
+narration when the card reaches Complete.
+
 Dangerous Hermes commands use a separate card in the same thread with Allow
 Once, Session, Always, and Deny actions. To avoid duplicate progress UI, disable
 Hermes' separate Feishu tool-progress messages when CardKit streaming is on:

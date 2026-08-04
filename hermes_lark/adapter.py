@@ -53,6 +53,7 @@ import collections
 import concurrent.futures
 import contextvars
 import copy
+import functools
 import hashlib
 import hmac
 import itertools
@@ -588,6 +589,57 @@ class FeishuBotPeerTurn:
 _BOT_PEER_TURN_CONTEXT: contextvars.ContextVar[Optional[FeishuBotPeerTurn]] = (
     contextvars.ContextVar("feishu_bot_peer_turn", default=None)
 )
+
+
+_CARDKIT_PROGRESS_DELIVERY_CONTEXT: contextvars.ContextVar[str] = (
+    contextvars.ContextVar("feishu_cardkit_progress_delivery", default="")
+)
+
+
+_CARDKIT_PROGRESS_CAPTURED_CONTEXT: contextvars.ContextVar[bool] = (
+    contextvars.ContextVar("feishu_cardkit_progress_captured", default=False)
+)
+
+
+_CARDKIT_HEARTBEAT_RE = re.compile(r"^⏳ Working — \d+ min(?: — .+)?$")
+
+
+def _install_cardkit_commentary_bridge() -> None:
+    """Mark Hermes commentary without treating card progress as final output."""
+    try:
+        from gateway.stream_consumer import GatewayStreamConsumer
+    except ImportError:
+        return
+
+    original = getattr(GatewayStreamConsumer, "_send_commentary", None)
+    if not callable(original) or getattr(
+        original,
+        "_hermes_lark_cardkit_commentary_bridge",
+        False,
+    ):
+        return
+
+    @functools.wraps(original)
+    async def send_commentary(consumer: Any, text: str) -> Any:
+        """Carry the commentary delivery kind through the adapter call."""
+        delivered = getattr(consumer, "_delivered_commentary_texts", None)
+        delivered_count = len(delivered) if isinstance(delivered, list) else 0
+        delivery_token = _CARDKIT_PROGRESS_DELIVERY_CONTEXT.set("commentary")
+        captured_token = _CARDKIT_PROGRESS_CAPTURED_CONTEXT.set(False)
+        try:
+            result = await original(consumer, text)
+            captured = _CARDKIT_PROGRESS_CAPTURED_CONTEXT.get()
+        finally:
+            _CARDKIT_PROGRESS_CAPTURED_CONTEXT.reset(captured_token)
+            _CARDKIT_PROGRESS_DELIVERY_CONTEXT.reset(delivery_token)
+        if captured and result and isinstance(delivered, list):
+            # Generating-only text disappears from the terminal card, so it
+            # cannot satisfy Hermes' durable final-delivery check.
+            del delivered[delivered_count:]
+        return result
+
+    send_commentary._hermes_lark_cardkit_commentary_bridge = True
+    GatewayStreamConsumer._send_commentary = send_commentary
 
 
 @dataclass(frozen=True)
@@ -3462,6 +3514,8 @@ class FeishuAdapter(BasePlatformAdapter):
         """Refresh an active card after one remote image upload completes."""
         if state.closed or state.unavailable or state.streaming_disabled:
             return
+        if state.progress_content or state.heartbeat_content:
+            state.full_update_pending = True
         controller = getattr(state, "flush_controller", None)
         if controller is not None:
             controller.request()
@@ -3827,10 +3881,7 @@ class FeishuAdapter(BasePlatformAdapter):
 
     async def _flush_cardkit_state(self, state: Any) -> None:
         """Write the latest cumulative content for one throttled card state."""
-        from .cardkit import (
-            build_generating_card,
-            should_buffer_silent_reply,
-        )
+        from .cardkit import build_generating_card, should_buffer_silent_reply
 
         async with state.lock:
             if state.closed or state.unavailable or state.streaming_disabled:
@@ -3843,18 +3894,33 @@ class FeishuAdapter(BasePlatformAdapter):
                 else content
             )
             content_changed = visible_content != state.last_flushed_content
-            if not content_changed and not state.full_update_pending:
-                return
-            if content_changed and should_buffer_silent_reply(
+            buffer_silent_reply = content_changed and should_buffer_silent_reply(
                 content,
                 visible_content=state.last_flushed_content,
-            ):
+            )
+            card_content = (
+                state.last_flushed_content
+                if buffer_silent_reply
+                else visible_content
+            )
+            if not content_changed and not state.full_update_pending:
                 return
 
             if state.phase == "thinking" or state.full_update_pending:
+                progress_content = str(state.progress_content or "")
+                heartbeat_content = str(state.heartbeat_content or "")
+                if image_resolver is not None:
+                    progress_content = image_resolver.resolve_images(
+                        progress_content
+                    )
+                    heartbeat_content = image_resolver.resolve_images(
+                        heartbeat_content
+                    )
                 generating_card = build_generating_card(
-                    visible_content,
+                    card_content,
                     tools=state.tools,
+                    progress_content=progress_content,
+                    heartbeat_content=heartbeat_content,
                 )
                 update_sequence = state.next_sequence()
                 try:
@@ -3870,7 +3936,7 @@ class FeishuAdapter(BasePlatformAdapter):
                         code=self._cardkit_error_code(exc),
                         sequence=update_sequence,
                         state="generating",
-                        content=visible_content,
+                        content=card_content,
                         card=generating_card,
                     )
                     self._handle_cardkit_stream_failure(
@@ -3887,7 +3953,7 @@ class FeishuAdapter(BasePlatformAdapter):
                     code=self._cardkit_response_code(update_response),
                     sequence=update_sequence,
                     state="generating",
-                    content=visible_content,
+                    content=card_content,
                     card=generating_card,
                 )
                 if not update_ok:
@@ -3901,7 +3967,7 @@ class FeishuAdapter(BasePlatformAdapter):
                 state.phase = "generating"
                 state.full_update_pending = False
 
-            if not content_changed:
+            if not content_changed or buffer_silent_reply:
                 state.stream_retry_count = 0
                 return
             sequence = state.next_sequence()
@@ -4015,6 +4081,37 @@ class FeishuAdapter(BasePlatformAdapter):
             if controller is not None and not state.streaming_disabled:
                 controller.request()
         return SendResult(success=True, message_id=state.message_id)
+
+    async def _stream_cardkit_progress(
+        self,
+        state: Any,
+        content: str,
+        *,
+        kind: Literal["commentary", "heartbeat"],
+    ) -> SendResult:
+        """Record one interim message inside an open conversational card."""
+        progress = str(content or "").strip()
+        if not progress:
+            return SendResult(success=True, message_id="")
+        async with state.lock:
+            if state.closed or state.unavailable:
+                return SendResult(success=True, message_id="")
+            if kind == "heartbeat":
+                changed = state.heartbeat_content != progress
+                state.heartbeat_content = progress
+            else:
+                changed = True
+                state.progress_content = (
+                    f"{state.progress_content}\n\n{progress}"
+                    if state.progress_content
+                    else progress
+                )
+            if changed:
+                state.full_update_pending = True
+                controller = getattr(state, "flush_controller", None)
+                if controller is not None and not state.streaming_disabled:
+                    controller.request()
+        return SendResult(success=True, message_id="")
 
     async def _finalize_cardkit(
         self,
@@ -4290,18 +4387,30 @@ class FeishuAdapter(BasePlatformAdapter):
                 status=normalized_status,
                 detail=safe_detail,
             )
-            visible_content = (
-                state.last_flushed_content
-                if should_buffer_silent_reply(
-                    state.content,
-                    visible_content=state.last_flushed_content,
-                )
-                else state.content
-            )
+            visible_content = str(state.content or "")
             image_resolver = getattr(state, "image_resolver", None)
             if image_resolver is not None:
                 visible_content = image_resolver.resolve_images(visible_content)
-            card = build_generating_card(visible_content, tools=state.tools)
+            if should_buffer_silent_reply(
+                state.content,
+                visible_content=state.last_flushed_content,
+            ):
+                visible_content = state.last_flushed_content
+            progress_content = str(state.progress_content or "")
+            heartbeat_content = str(state.heartbeat_content or "")
+            if image_resolver is not None:
+                progress_content = image_resolver.resolve_images(
+                    progress_content
+                )
+                heartbeat_content = image_resolver.resolve_images(
+                    heartbeat_content
+                )
+            card = build_generating_card(
+                visible_content,
+                tools=state.tools,
+                progress_content=progress_content,
+                heartbeat_content=heartbeat_content,
+            )
             sequence = state.next_sequence()
             try:
                 response = await self._cardkit_update(state, card, sequence)
@@ -4466,6 +4575,28 @@ class FeishuAdapter(BasePlatformAdapter):
             formatted,
             chat_id,
         )
+        thread_id = self._cardkit_thread_for_send(reply_to, metadata)
+        progress_kind = _CARDKIT_PROGRESS_DELIVERY_CONTEXT.get()
+        if not progress_kind and _CARDKIT_HEARTBEAT_RE.fullmatch(
+            formatted.strip()
+        ):
+            progress_kind = "heartbeat"
+        progress_state = self._known_cardkit_state_for_route(chat_id, thread_id)
+        if (
+            progress_kind in {"commentary", "heartbeat"}
+            and progress_state is not None
+            and not (metadata or {}).get("expect_edits")
+            and not (metadata or {}).get("notify")
+        ):
+            result = await self._stream_cardkit_progress(
+                progress_state,
+                formatted,
+                kind=progress_kind,
+            )
+            if progress_kind == "commentary" and result.success:
+                _CARDKIT_PROGRESS_CAPTURED_CONTEXT.set(True)
+            return result
+
         bot_peer_turn = self._current_bot_peer_turn(
             chat_id=chat_id,
             reply_to=reply_to,
@@ -4475,17 +4606,29 @@ class FeishuAdapter(BasePlatformAdapter):
             formatted,
             bot_peer_turn,
         )
-        thread_id = self._cardkit_thread_for_send(reply_to, metadata)
         cardkit_state = self._known_cardkit_state_for_route(chat_id, thread_id)
-        if (
-            cardkit_state is not None
-            and isinstance(metadata, dict)
-            and metadata.get("expect_edits")
-        ):
-            result = await self._stream_cardkit_content(
-                cardkit_state,
-                formatted,
-            )
+        cardkit_result = None
+        if cardkit_state is not None and isinstance(metadata, dict):
+            if metadata.get("expect_edits"):
+                cardkit_result = await self._stream_cardkit_content(
+                    cardkit_state,
+                    formatted,
+                )
+            # Hermes' final text has a reply anchor; attachment-failure
+            # notices reuse notify metadata without one.
+            elif (
+                metadata.get("notify")
+                and getattr(cardkit_state, "turn_terminal", False)
+                and bool(str(reply_to or "").strip())
+                and not getattr(cardkit_state, "closed", False)
+                and not getattr(cardkit_state, "unavailable", False)
+            ):
+                cardkit_result = await self._stream_cardkit_content(
+                    cardkit_state,
+                    formatted,
+                )
+        if cardkit_result is not None:
+            result = cardkit_result
             if result.success and bot_peer_turn is not None and mention_applied:
                 bot_peer_turn.mentioned_message_ids.add(cardkit_state.message_id)
             elif bot_peer_turn is not None and mention_applied:
@@ -12779,6 +12922,7 @@ def _build_adapter(config):
 
 def register(ctx) -> None:
     """Plugin entry point — called by the Hermes plugin system."""
+    _install_cardkit_commentary_bridge()
     ctx.register_platform(
         name="feishu",
         label="Feishu / Lark",
