@@ -6,6 +6,7 @@ import asyncio
 import json
 import sys
 import tempfile
+import types
 import unittest
 from pathlib import Path
 from types import SimpleNamespace
@@ -281,6 +282,424 @@ class CardKitAdapterTests(unittest.TestCase):
         self.assertEqual(sends[-1][1]["msg_type"], "text")
         self.assertFalse(any(call[0] == "settings" for call in calls))
         self.assertFalse(any(call[0] == "update" for call in calls))
+
+    def test_progress_sends_update_the_active_card_without_plain_messages(self) -> None:
+        adapter, calls = self._adapter()
+        adapter._cardkit_stream_throttle_seconds = 0.001
+        adapter._finalize_send_result = lambda *_args: SimpleNamespace(
+            success=True,
+            message_id="om_plain",
+        )
+        ticket = self.tools.ToolTicket(
+            session_id="session-1",
+            message_id="om_root",
+            chat_id="oc_chat",
+            account_id="default",
+            profile_scope="profile",
+            chat_type="p2p",
+            session_thread_id="om_root",
+        )
+
+        async def scenario() -> None:
+            state = await adapter._start_cardkit_turn(self._event())
+            token = self.adapter_module._CARDKIT_PROGRESS_DELIVERY_CONTEXT.set(
+                "commentary"
+            )
+            try:
+                first = await adapter.send(
+                    "oc_chat",
+                    "Checking GitHub authentication.",
+                    metadata={"thread_id": "om_root"},
+                )
+                second = await adapter.send(
+                    "oc_chat",
+                    "Reading the issue and production errors.",
+                    metadata={"thread_id": "om_root"},
+                )
+            finally:
+                self.adapter_module._CARDKIT_PROGRESS_DELIVERY_CONTEXT.reset(
+                    token
+                )
+            old_heartbeat = await adapter.send(
+                "oc_chat",
+                "⏳ Working — 2 min — iteration 5/60",
+                metadata={"thread_id": "om_root"},
+            )
+            latest_heartbeat = await adapter.send(
+                "oc_chat",
+                "⏳ Working — 3 min — iteration 7/60",
+                metadata={"thread_id": "om_root"},
+            )
+            self.assertTrue(
+                await adapter._update_cardkit_tool_for_ticket(
+                    ticket,
+                    tool_name="terminal",
+                    tool_call_id="call-1",
+                    status="running",
+                )
+            )
+            await asyncio.sleep(0.03)
+
+            self.assertTrue(first.success)
+            self.assertTrue(second.success)
+            self.assertTrue(old_heartbeat.success)
+            self.assertTrue(latest_heartbeat.success)
+            self.assertFalse(first.message_id)
+            self.assertFalse(second.message_id)
+            self.assertFalse(old_heartbeat.message_id)
+            self.assertFalse(latest_heartbeat.message_id)
+            self.assertFalse(state.closed)
+            self.assertEqual(state.content, "")
+            self.assertEqual(
+                state.progress_content,
+                (
+                    "Checking GitHub authentication.\n\n"
+                    "Reading the issue and production errors."
+                ),
+            )
+            self.assertEqual(
+                state.heartbeat_content,
+                "⏳ Working — 3 min — iteration 7/60",
+            )
+
+            streamed = await adapter.send(
+                "oc_chat",
+                "Final answer",
+                metadata={
+                    "thread_id": "om_root",
+                    "expect_edits": True,
+                },
+            )
+            state.turn_terminal = True
+            finalized = await adapter.edit_message(
+                "oc_chat",
+                "om_card",
+                "Final answer",
+                finalize=True,
+                metadata={"thread_id": "om_root"},
+            )
+
+            self.assertTrue(streamed.success)
+            self.assertTrue(finalized.success)
+            self.assertEqual(state.content, "Final answer")
+
+        asyncio.run(scenario())
+
+        sends = [call for call in calls if call[0] == "send"]
+        self.assertEqual(len(sends), 1)
+        self.assertEqual(sends[0][1]["msg_type"], "interactive")
+        generating_cards = [
+            call[1]
+            for call in calls
+            if call[0] == "update"
+            and call[1]["config"]["summary"]["content"] == "Generating..."
+        ]
+        generating_json = json.dumps(generating_cards[-1], ensure_ascii=False)
+        self.assertIn("Checking GitHub authentication.", generating_json)
+        self.assertIn("Reading the issue and production errors.", generating_json)
+        self.assertIn("⏳ Working — 3 min — iteration 7/60", generating_json)
+        self.assertIn("terminal", generating_json)
+        self.assertNotIn(
+            "⏳ Working — 2 min — iteration 5/60",
+            generating_json,
+        )
+        terminal_card = [call for call in calls if call[0] == "update"][-1][1]
+        terminal_json = json.dumps(terminal_card, ensure_ascii=False)
+        self.assertIn("Final answer", terminal_json)
+        self.assertNotIn("Checking GitHub authentication.", terminal_json)
+        self.assertNotIn("⏳ Working", terminal_json)
+
+    def test_progress_only_silent_reply_finishes_as_done(self) -> None:
+        adapter, calls = self._adapter()
+        adapter._cardkit_stream_throttle_seconds = 0.001
+
+        async def scenario() -> None:
+            state = await adapter._start_cardkit_turn(self._event())
+            token = self.adapter_module._CARDKIT_PROGRESS_DELIVERY_CONTEXT.set(
+                "commentary"
+            )
+            try:
+                await adapter.send(
+                    "oc_chat",
+                    "Still checking the source.",
+                    metadata={"thread_id": "om_root"},
+                )
+            finally:
+                self.adapter_module._CARDKIT_PROGRESS_DELIVERY_CONTEXT.reset(
+                    token
+                )
+            await asyncio.sleep(0.03)
+            state.turn_terminal = True
+            result = await adapter._finalize_cardkit(state, "NO_REPLY")
+
+            self.assertTrue(result.success)
+            self.assertEqual(state.last_flushed_content, "Done.")
+
+        asyncio.run(scenario())
+
+        terminal_card = [call for call in calls if call[0] == "update"][-1][1]
+        terminal_json = json.dumps(terminal_card, ensure_ascii=False)
+        self.assertIn("Done.", terminal_json)
+        self.assertNotIn("Still checking the source.", terminal_json)
+
+    def test_progress_does_not_consume_the_bot_peer_final_mention(self) -> None:
+        adapter, _calls = self._adapter()
+
+        async def scenario() -> None:
+            state = await adapter._start_cardkit_turn(self._event())
+            turn = self.adapter_module.FeishuBotPeerTurn(
+                account_id="default",
+                chat_id="oc_chat",
+                thread_id="om_root",
+                reply_anchors=frozenset({"om_root"}),
+                peer_open_id="ou_peer",
+                peer_name="Peer Bot",
+            )
+            turn_token = self.adapter_module._BOT_PEER_TURN_CONTEXT.set(turn)
+            try:
+                progress_token = (
+                    self.adapter_module._CARDKIT_PROGRESS_DELIVERY_CONTEXT.set(
+                        "commentary"
+                    )
+                )
+                try:
+                    await adapter.send(
+                        "oc_chat",
+                        "Checking now.",
+                        metadata={
+                            "thread_id": "om_root",
+                            "reply_to_message_id": "om_root",
+                        },
+                    )
+                finally:
+                    self.adapter_module._CARDKIT_PROGRESS_DELIVERY_CONTEXT.reset(
+                        progress_token
+                    )
+                self.assertFalse(turn.mentioned)
+                await adapter.send(
+                    "oc_chat",
+                    "Final answer",
+                    metadata={
+                        "thread_id": "om_root",
+                        "reply_to_message_id": "om_root",
+                        "expect_edits": True,
+                    },
+                )
+            finally:
+                self.adapter_module._BOT_PEER_TURN_CONTEXT.reset(turn_token)
+
+            self.assertTrue(turn.mentioned)
+            self.assertIn("om_card", turn.mentioned_message_ids)
+            self.assertTrue(
+                state.content.startswith(
+                    '<at user_id="ou_peer">Peer Bot</at> '
+                )
+            )
+
+        asyncio.run(scenario())
+
+    def test_plain_turn_message_is_not_absorbed_as_card_progress(self) -> None:
+        adapter, calls = self._adapter()
+        adapter._finalize_send_result = lambda *_args: SimpleNamespace(
+            success=True,
+            message_id="om_clarify",
+        )
+
+        async def scenario() -> None:
+            state = await adapter._start_cardkit_turn(self._event())
+            result = await adapter.send(
+                "oc_chat",
+                "Which environment should I inspect?",
+                metadata={"thread_id": "om_root"},
+            )
+
+            self.assertTrue(result.success)
+            self.assertEqual(result.message_id, "om_clarify")
+            self.assertEqual(state.progress_content, "")
+            self.assertEqual(state.heartbeat_content, "")
+
+        asyncio.run(scenario())
+
+        sends = [call for call in calls if call[0] == "send"]
+        self.assertEqual(len(sends), 2)
+        self.assertEqual(sends[-1][1]["msg_type"], "text")
+
+    def test_terminal_plain_send_is_not_absorbed_as_card_progress(self) -> None:
+        adapter, calls = self._adapter()
+        adapter._finalize_send_result = lambda *_args: SimpleNamespace(
+            success=True,
+            message_id="om_final_fallback",
+        )
+
+        async def scenario() -> None:
+            state = await adapter._start_cardkit_turn(self._event())
+            state.turn_terminal = True
+            result = await adapter.send(
+                "oc_chat",
+                "Final fallback",
+                metadata={"thread_id": "om_root"},
+            )
+
+            self.assertTrue(result.success)
+            self.assertEqual(result.message_id, "om_final_fallback")
+            self.assertEqual(state.progress_content, "")
+            self.assertEqual(state.heartbeat_content, "")
+
+        asyncio.run(scenario())
+
+        sends = [call for call in calls if call[0] == "send"]
+        self.assertEqual(len(sends), 2)
+        self.assertEqual(sends[-1][1]["msg_type"], "text")
+
+    def test_marked_progress_drains_after_terminal_signal_without_late_bubbles(
+        self,
+    ) -> None:
+        adapter, calls = self._adapter()
+
+        async def scenario() -> None:
+            state = await adapter._start_cardkit_turn(self._event())
+            state.turn_terminal = True
+            token = self.adapter_module._CARDKIT_PROGRESS_DELIVERY_CONTEXT.set(
+                "commentary"
+            )
+            try:
+                draining = await adapter.send(
+                    "oc_chat",
+                    "Draining queued commentary.",
+                    metadata={"thread_id": "om_root"},
+                )
+                state.closed = True
+                late = await adapter.send(
+                    "oc_chat",
+                    "Already closed commentary.",
+                    metadata={"thread_id": "om_root"},
+                )
+            finally:
+                self.adapter_module._CARDKIT_PROGRESS_DELIVERY_CONTEXT.reset(
+                    token
+                )
+
+            self.assertTrue(draining.success)
+            self.assertTrue(late.success)
+            self.assertFalse(draining.message_id)
+            self.assertFalse(late.message_id)
+            self.assertEqual(
+                state.progress_content,
+                "Draining queued commentary.",
+            )
+
+        asyncio.run(scenario())
+
+        sends = [call for call in calls if call[0] == "send"]
+        self.assertEqual(len(sends), 1)
+
+    def test_card_commentary_does_not_suppress_the_matching_final_answer(
+        self,
+    ) -> None:
+        adapter, calls = self._adapter()
+        adapter._finalize_send_result = lambda *_args: SimpleNamespace(
+            success=True,
+            message_id="om_plain",
+        )
+        observed: list[str] = []
+
+        class GatewayStreamConsumer:
+            """Minimal Hermes consumer exposing its commentary send seam."""
+
+            def __init__(self) -> None:
+                self.adapter = adapter
+                self.chat_id = "oc_chat"
+                self.metadata = {"thread_id": "om_root"}
+                self._delivered_commentary_texts: list[str] = []
+
+            async def _send_commentary(self, text: str) -> bool:
+                observed.append(
+                    self_adapter._CARDKIT_PROGRESS_DELIVERY_CONTEXT.get()
+                )
+                result = await self.adapter.send(
+                    self.chat_id,
+                    text,
+                    metadata=self.metadata,
+                )
+                if result.success:
+                    self._delivered_commentary_texts.append(text)
+                return result.success
+
+        self_adapter = self.adapter_module
+        module = types.ModuleType("gateway.stream_consumer")
+        module.GatewayStreamConsumer = GatewayStreamConsumer
+        previous = sys.modules.get("gateway.stream_consumer", _MISSING_MODULE)
+        sys.modules["gateway.stream_consumer"] = module
+        try:
+            self.adapter_module._install_cardkit_commentary_bridge()
+            installed = GatewayStreamConsumer._send_commentary
+            self.adapter_module._install_cardkit_commentary_bridge()
+            self.assertIs(GatewayStreamConsumer._send_commentary, installed)
+
+            async def scenario() -> tuple[bool, list[str]]:
+                state = await adapter._start_cardkit_turn(self._event())
+                consumer = GatewayStreamConsumer()
+                commentary_sent = await consumer._send_commentary(
+                    "Final answer"
+                )
+                self.assertEqual(consumer._delivered_commentary_texts, [])
+                self.assertEqual(state.content, "")
+                self.assertEqual(state.progress_content, "Final answer")
+
+                state.turn_terminal = True
+                final = await adapter.send(
+                    "oc_chat",
+                    "Final answer",
+                    reply_to="om_root",
+                    metadata={
+                        "thread_id": "om_root",
+                        "notify": True,
+                    },
+                )
+                self.assertTrue(final.success)
+                self.assertEqual(final.message_id, "om_card")
+                self.assertEqual(state.content, "Final answer")
+                self.assertFalse(state.closed)
+                attachment_notice = await adapter.send(
+                    "oc_chat",
+                    "⚠️ Couldn't deliver the file attachment.",
+                    metadata={
+                        "thread_id": "om_root",
+                        "notify": True,
+                    },
+                )
+                self.assertTrue(attachment_notice.success)
+                self.assertEqual(attachment_notice.message_id, "om_plain")
+                self.assertEqual(state.content, "Final answer")
+                await adapter._finalize_cardkit(
+                    state,
+                    state.content,
+                )
+                adapter._forget_cardkit_turn(state)
+                await consumer._send_commentary("Ordinary commentary")
+                return commentary_sent, consumer._delivered_commentary_texts
+
+            result, delivered = asyncio.run(scenario())
+        finally:
+            if previous is _MISSING_MODULE:
+                sys.modules.pop("gateway.stream_consumer", None)
+            else:
+                sys.modules["gateway.stream_consumer"] = previous
+
+        self.assertTrue(result)
+        self.assertEqual(delivered, ["Ordinary commentary"])
+        self.assertEqual(observed, ["commentary", "commentary"])
+        self.assertEqual(
+            self.adapter_module._CARDKIT_PROGRESS_DELIVERY_CONTEXT.get(),
+            "",
+        )
+        self.assertFalse(
+            self.adapter_module._CARDKIT_PROGRESS_CAPTURED_CONTEXT.get()
+        )
+        terminal_card = [call for call in calls if call[0] == "update"][-1][1]
+        terminal_json = json.dumps(terminal_card, ensure_ascii=False)
+        self.assertIn("Final answer", terminal_json)
+        self.assertNotIn("Done.", terminal_json)
 
     def test_rapid_partials_coalesce_to_the_latest_cumulative_content(self) -> None:
         adapter, calls = self._adapter()

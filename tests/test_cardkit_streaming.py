@@ -188,6 +188,8 @@ class CardKitStreamingTests(unittest.IsolatedAsyncioTestCase):
         generating = self.module.build_generating_card(
             "partial answer",
             tools=running,
+            progress_content="Checking authentication.\n\nReading issue data.",
+            heartbeat_content="⏳ Working — 3 min",
         )
         self.assertIs(generating["config"]["streaming_mode"], True)
         self.assertEqual(
@@ -217,6 +219,17 @@ class CardKitStreamingTests(unittest.IsolatedAsyncioTestCase):
                 if element.get("element_id") == "streaming_content"
             ),
             "partial answer",
+        )
+        self.assertEqual(
+            next(
+                element["content"]
+                for element in generating_elements
+                if element.get("element_id") == "progress_content"
+            ),
+            (
+                "Checking authentication.\n\nReading issue data.\n\n"
+                "⏳ Working — 3 min"
+            ),
         )
         tool_panel = next(
             element
@@ -277,6 +290,12 @@ class CardKitStreamingTests(unittest.IsolatedAsyncioTestCase):
         self.assertFalse(
             any(
                 element.get("element_id") == "loading_icon"
+                for element in complete_elements
+            )
+        )
+        self.assertFalse(
+            any(
+                element.get("element_id") == "progress_content"
                 for element in complete_elements
             )
         )
