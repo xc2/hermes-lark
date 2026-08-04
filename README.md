@@ -199,13 +199,15 @@ replyMode:
 
 With `replyMode: auto`, DMs use CardKit and groups use static replies. One agent
 turn creates one CardKit entity and one thread message. The card moves through
-Thinking, Generating, tool-running/tool-complete, and Complete/Error states
-while the response body is updated cumulatively.
+Thinking, Generating, tool-running/tool-complete, and terminal success/error
+states while the response body is updated cumulatively. Successful cards omit
+the fixed completion banner and leave the summary empty so Feishu can derive
+the chat-list preview from the card.
 
 While the turn is active, Hermes interim assistant messages and the latest
 default `⏳ Working` notification appear in the Generating body instead of
 creating separate Feishu messages. The final answer replaces that progress
-narration when the card reaches Complete.
+narration when the turn succeeds.
 
 Dangerous Hermes commands use a separate card in the same thread with Allow
 Once, Session, Always, and Deny actions. To avoid duplicate progress UI, disable

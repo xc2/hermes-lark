@@ -1764,7 +1764,16 @@ class LiveThreadModelTests(unittest.TestCase):
         self.assertIsInstance(final_config, dict)
         self.assertIs(final_config.get("streaming_mode"), False)
         self.assertNotIn("loading_icon", _cardkit_trace_text(updated))
-        self.assertIn("Complete", _cardkit_trace_text(updated))
+        self.assertEqual(final_config.get("summary"), {"content": ""})
+        final_body = final_card.get("body")
+        self.assertIsInstance(final_body, dict)
+        self.assertFalse(
+            any(
+                element.get("element_id") == "lifecycle_status"
+                for element in final_body.get("elements", [])
+                if isinstance(element, dict)
+            )
+        )
 
         raw_card = _message_body_content(self.api.get_message(message_id))
         self.assertIsInstance(raw_card, dict)

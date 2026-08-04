@@ -153,15 +153,25 @@ class CardKitAdapterTests(unittest.TestCase):
         settings_call = next(call for call in calls if call[0] == "settings")
         self.assertFalse(settings_call[1])
         update_call = [call for call in calls if call[0] == "update"][-1]
-        self.assertIn("Complete", json.dumps(update_call[1], ensure_ascii=False))
+        self.assertNotIn("Complete", json.dumps(update_call[1], ensure_ascii=False))
+        self.assertNotIn(
+            "✅ **Complete**",
+            json.dumps(update_call[1], ensure_ascii=False),
+        )
         self.assertNotIn("loading", json.dumps(update_call[1], ensure_ascii=False))
         self.assertEqual(
-            update_call[1]["config"]["summary"]["i18n_content"],
-            {"zh_cn": "Complete", "en_us": "Complete"},
+            update_call[1]["config"]["summary"],
+            {"content": ""},
+        )
+        self.assertFalse(
+            any(
+                element.get("element_id") == "lifecycle_status"
+                for element in update_call[1]["body"]["elements"]
+            )
         )
         self.assertEqual(
-            update_call[1]["body"]["elements"][0]["i18n_content"],
-            {"zh_cn": "✅ **Complete**", "en_us": "✅ **Complete**"},
+            update_call[1]["body"]["elements"][0]["element_id"],
+            "streaming_content",
         )
 
     def test_direct_plugin_commands_skip_cardkit_without_disabling_skill_commands(
