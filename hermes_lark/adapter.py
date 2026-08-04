@@ -3733,8 +3733,13 @@ class FeishuAdapter(BasePlatformAdapter):
 
     async def _start_cardkit_turn(self, event: MessageEvent) -> Optional[Any]:
         """Create and send the Thinking card for one admitted Feishu turn."""
-        # Direct plugin commands send their own replies without a placeholder card.
-        command_parts = str(getattr(event, "text", "") or "").lstrip().split(maxsplit=1)
+        event_text = str(getattr(event, "text", "") or "")
+        event_is_command = getattr(event, "message_type", None) == MessageType.COMMAND
+        is_command = getattr(event, "is_command", None)
+        if callable(is_command):
+            event_is_command = event_is_command or bool(is_command())
+        command_origin = event_is_command or event_text.lstrip().startswith("/")
+        command_parts = event_text.lstrip().split(maxsplit=1)
         command_key = (
             command_parts[0].split("@", 1)[0].lower().replace("_", "-")
             if command_parts
@@ -3878,6 +3883,7 @@ class FeishuAdapter(BasePlatformAdapter):
             )
             state.flush_controller.mark_ready()
             state.turn_terminal = False
+            state.command_origin = command_origin
             state.phase = "thinking"
             self._cardkit_states_by_route[route_key] = state
             self._cardkit_states_by_message[message_id] = state
@@ -4633,11 +4639,14 @@ class FeishuAdapter(BasePlatformAdapter):
                     cardkit_state,
                     formatted,
                 )
-            # Hermes' final text has a reply anchor; attachment-failure
-            # notices reuse notify metadata without one.
+            # Final text and direct command replies have a reply anchor;
+            # attachment-failure notices reuse notify metadata without one.
             elif (
                 metadata.get("notify")
-                and getattr(cardkit_state, "turn_terminal", False)
+                and (
+                    getattr(cardkit_state, "turn_terminal", False)
+                    or getattr(cardkit_state, "command_origin", False)
+                )
                 and bool(str(reply_to or "").strip())
                 and not getattr(cardkit_state, "closed", False)
                 and not getattr(cardkit_state, "unavailable", False)
