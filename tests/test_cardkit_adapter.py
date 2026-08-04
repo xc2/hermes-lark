@@ -225,6 +225,59 @@ class CardKitAdapterTests(unittest.TestCase):
         self.assertEqual(sends[1][1]["msg_type"], "interactive")
         self.assertFalse(any(call[0] == "update" for call in calls))
 
+    def test_unknown_gateway_command_reuses_its_card_for_command_reply(self) -> None:
+        adapter, calls = self._adapter()
+        adapter._reactions_enabled = lambda: False
+        adapter._finalize_send_result = lambda *_args: SimpleNamespace(
+            success=True,
+            message_id="om_command_reply",
+        )
+        event = self._event()
+        event.text = "/reload"
+        event.message_type = self.adapter_module.MessageType.COMMAND
+        command_reply = (
+            "Unknown command `/reload`. Type /commands to see what's available, "
+            "or resend without the leading slash to send as a regular message."
+        )
+
+        async def scenario() -> None:
+            await adapter.on_processing_start(event)
+            result = await adapter.send(
+                "oc_chat",
+                command_reply,
+                reply_to="om_root",
+                metadata={"thread_id": "om_root", "notify": True},
+            )
+            self.assertTrue(result.success)
+            await adapter.on_processing_complete(
+                event,
+                self.adapter_module.ProcessingOutcome.SUCCESS,
+            )
+
+        asyncio.run(scenario())
+
+        sends = [call[1] for call in calls if call[0] == "send"]
+        terminal_cards = [call[1] for call in calls if call[0] == "update"]
+        self.assertEqual(
+            {
+                "message_types": [call["msg_type"] for call in sends],
+                "card_contains_done": any(
+                    "Done." in json.dumps(card, ensure_ascii=False)
+                    for card in terminal_cards
+                ),
+                "card_contains_unknown": any(
+                    "Unknown command" in json.dumps(card, ensure_ascii=False)
+                    for card in terminal_cards
+                ),
+            },
+            {
+                "message_types": ["interactive"],
+                "card_contains_done": False,
+                "card_contains_unknown": True,
+            },
+        )
+        self.assertFalse(adapter._cardkit_states_by_route)
+
     def test_tool_lifecycle_updates_the_active_conversation_card(self) -> None:
         adapter, calls = self._adapter()
         ticket = self.tools.ToolTicket(
