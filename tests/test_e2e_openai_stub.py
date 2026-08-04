@@ -578,7 +578,7 @@ class CardKitTraceFixtureTests(unittest.TestCase):
                                 "ok": True,
                                 "sequence": 4,
                                 "card": {
-                                    "config": {"summary": "Complete"},
+                                    "config": {"summary": {"content": ""}},
                                     "body": {
                                         "elements": [
                                             {
@@ -611,7 +611,7 @@ class CardKitTraceFixtureTests(unittest.TestCase):
             "generating",
         )
         final_text = test_live_thread_model._cardkit_trace_text(entries[1])
-        self.assertIn("Complete", final_text)
+        self.assertNotIn("Complete", final_text)
         self.assertIn("final marker", final_text)
 
 

@@ -39,8 +39,8 @@ the live suite internally.
 - Complex Markdown is streamed through three provider deltas released by the
   test. The suite requires one real CardKit entity and one thread message,
   observes Thinking, Generating, three cumulative `cardElement.content`
-  updates, closing `streaming_mode`, and the Complete full-card update, with no
-  duplicate partial messages.
+  updates, closing `streaming_mode`, and the banner-free successful full-card
+  update, with no duplicate partial messages.
 - A deterministic remote PNG is initially stripped from a CardKit frame, then
   re-flushed as an `img_*` key after Feishu upload. The raw URL may not reach a
   card request or its E2E trace, and terminal completion must retain that key.

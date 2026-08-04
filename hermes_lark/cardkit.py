@@ -611,18 +611,20 @@ def _build_lifecycle_card(
     visible_content = (
         content if streaming else sanitize_terminal_cardkit_markdown(content)
     )
-    elements: list[dict[str, Any]] = [
-        {
-            "tag": "markdown",
-            "content": lifecycle_content,
-            "i18n_content": {
-                "zh_cn": lifecycle_content_zh,
-                "en_us": lifecycle_content,
-            },
-            "text_size": "notation",
-            "element_id": LIFECYCLE_ELEMENT_ID,
-        }
-    ]
+    elements: list[dict[str, Any]] = []
+    if lifecycle_content:
+        elements.append(
+            {
+                "tag": "markdown",
+                "content": lifecycle_content,
+                "i18n_content": {
+                    "zh_cn": lifecycle_content_zh,
+                    "en_us": lifecycle_content,
+                },
+                "text_size": "notation",
+                "element_id": LIFECYCLE_ELEMENT_ID,
+            }
+        )
     if tools:
         elements.append(_build_tool_panel(tools, expanded=streaming))
     progress_parts = [
@@ -671,13 +673,17 @@ def _build_lifecycle_card(
         "config": {
             "streaming_mode": streaming,
             "locales": ["zh_cn", "en_us"],
-            "summary": {
-                "content": summary,
-                "i18n_content": {
-                    "zh_cn": summary_zh,
-                    "en_us": summary,
-                },
-            },
+            "summary": (
+                {
+                    "content": summary,
+                    "i18n_content": {
+                        "zh_cn": summary_zh,
+                        "en_us": summary,
+                    },
+                }
+                if summary or summary_zh
+                else {"content": ""}
+            ),
         },
         "body": {"elements": elements},
     }
@@ -709,12 +715,12 @@ def build_complete_card(
     *,
     tools: Optional[Mapping[str, Any]] = None,
 ) -> dict[str, Any]:
-    """Build the closed successful card without a loading indicator."""
+    """Build the closed successful card without a status banner."""
     return _build_lifecycle_card(
-        lifecycle_content="✅ **Complete**",
-        lifecycle_content_zh="✅ **Complete**",
-        summary="Complete",
-        summary_zh="Complete",
+        lifecycle_content="",
+        lifecycle_content_zh="",
+        summary="",
+        summary_zh="",
         content=content,
         streaming=False,
         tools=tools,

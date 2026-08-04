@@ -268,16 +268,13 @@ class CardKitStreamingTests(unittest.IsolatedAsyncioTestCase):
             tools=succeeded,
         )
         self.assertIs(complete["config"]["streaming_mode"], False)
-        self.assertEqual(complete["config"]["summary"]["content"], "Complete")
-        self.assertEqual(
-            complete["config"]["summary"]["i18n_content"],
-            {"zh_cn": "Complete", "en_us": "Complete"},
-        )
+        self.assertEqual(complete["config"]["summary"], {"content": ""})
         complete_elements = complete["body"]["elements"]
-        self.assertEqual(complete_elements[0]["content"], "✅ **Complete**")
-        self.assertEqual(
-            complete_elements[0]["i18n_content"],
-            {"zh_cn": "✅ **Complete**", "en_us": "✅ **Complete**"},
+        self.assertFalse(
+            any(
+                element.get("element_id") == "lifecycle_status"
+                for element in complete_elements
+            )
         )
         self.assertEqual(
             next(
