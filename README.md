@@ -58,7 +58,7 @@ Install the project from a reviewed checkout into the same Python environment
 that provides the `hermes` executable:
 
 ```bash
-git clone https://github.com/xc2/hermes-lark.git
+git clone --branch v1.0.0 https://github.com/xc2/hermes-lark.git
 cd hermes-lark
 python -m pip install .
 hermes plugins enable platforms/feishu --no-allow-tool-override

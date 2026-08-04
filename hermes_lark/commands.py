@@ -57,7 +57,7 @@ def _plugin_version() -> str:
     try:
         return metadata.version("hermes-lark")
     except metadata.PackageNotFoundError:
-        return "0.1.0"
+        return "1.0.0"
 
 
 def _command_ticket_or_error() -> tuple[

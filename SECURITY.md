@@ -2,8 +2,8 @@
 
 ## Supported versions
 
-`hermes-lark` is currently pre-1.0. Security fixes are applied to the latest
-release and the `main` branch. Older pre-release versions are not supported.
+Security fixes are applied to the latest release and the `main` branch. Older
+releases are not supported.
 
 ## Reporting a vulnerability
 

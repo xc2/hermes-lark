@@ -10,4 +10,4 @@ RUN uv pip install \
     && uv pip check \
       --python /opt/hermes/.venv/bin/python \
     && /opt/hermes/.venv/bin/python -c \
-      "from importlib.metadata import entry_points, version; expected={'hermes-agent':'0.19.1','hermes-lark':'0.1.0'}; assert {name: version(name) for name in expected} == expected; assert {ep.name: ep.value for ep in entry_points(group='hermes_agent.plugins')}['platforms/feishu'] == 'hermes_lark'"
+      "from importlib.metadata import entry_points, version; expected={'hermes-agent':'0.19.1','hermes-lark':'1.0.0'}; assert {name: version(name) for name in expected} == expected; assert {ep.name: ep.value for ep in entry_points(group='hermes_agent.plugins')}['platforms/feishu'] == 'hermes_lark'"

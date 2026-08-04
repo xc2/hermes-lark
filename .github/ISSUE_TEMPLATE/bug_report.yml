@@ -15,7 +15,7 @@ body:
     id: version
     attributes:
       label: Version or commit
-      placeholder: 0.1.0 or a full commit SHA
+      placeholder: 1.0.0 or a full commit SHA
     validations:
       required: true
 
