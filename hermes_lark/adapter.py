@@ -5491,6 +5491,17 @@ class FeishuAdapter(BasePlatformAdapter):
             scopes.append("application:application:self_manage")
         return scopes
 
+    @staticmethod
+    def _openclaw_resumes_previous_operation(interaction: Any) -> bool:
+        """Return whether successful authorization resumes a blocked tool."""
+        if isinstance(interaction, dict):
+            context = interaction.get("context")
+        else:
+            context = getattr(interaction, "context", None)
+        if not isinstance(context, dict):
+            return True
+        return context.get("resume_previous_operation") is not False
+
     def _track_openclaw_oauth_task(
         self,
         token: str,
@@ -5763,6 +5774,10 @@ class FeishuAdapter(BasePlatformAdapter):
         token = str(interaction.token or "")
         sender_open_id = str(interaction.ticket.sender_open_id or "")
         is_batch = str(interaction.kind or "") == "oauth_batch_auth"
+        resume_previous_operation = self._openclaw_resumes_previous_operation(
+            interaction
+        )
+        force_device_flow = force_device_flow or str(interaction.kind or "") == "oauth"
         current_task = asyncio.current_task()
         if current_task is not None:
             self._track_openclaw_oauth_task(token, current_task)
@@ -5803,6 +5818,8 @@ class FeishuAdapter(BasePlatformAdapter):
                     ),
                     label="OAuth application-permission guidance card",
                 )
+            if is_batch and not resume_previous_operation:
+                await runtime.refresh(sender_open_id)
             plan = await runtime.plan_authorization(
                 application,
                 sender_open_id,
@@ -5835,6 +5852,17 @@ class FeishuAdapter(BasePlatformAdapter):
                 scope = plan.scope
             if not force_device_flow and plan.complete:
                 if requested or is_batch:
+                    if not resume_previous_operation:
+                        delivered = await self._send_openclaw_host_card(
+                            interaction,
+                            self._build_openclaw_oauth_success_card(),
+                            label="OAuth success card",
+                        )
+                        self._clear_openclaw_oauth_flow(flow_key, token)
+                        cancel_interaction(token)
+                        with self._openclaw_submitted_lock:
+                            self._openclaw_interaction_messages.pop(token, None)
+                        return delivered
                     self._clear_openclaw_oauth_flow(flow_key, token)
                     self._schedule_openclaw_continuation(
                         token,
@@ -5967,18 +5995,21 @@ class FeishuAdapter(BasePlatformAdapter):
                 token,
                 self._build_openclaw_oauth_success_card(),
             )
-            await self._resume_and_inject_openclaw_continuation(
-                token,
-                text=(
-                    "I have authorized my Feishu account. Please continue the "
-                    "previous operation."
-                ),
-                message_suffix="auth-complete",
-                payload={
-                    "authorized": True,
-                    "scope": stored.scope or scope,
-                },
-            )
+            if self._openclaw_resumes_previous_operation(interaction):
+                await self._resume_and_inject_openclaw_continuation(
+                    token,
+                    text=(
+                        "I have authorized my Feishu account. Please continue the "
+                        "previous operation."
+                    ),
+                    message_suffix="auth-complete",
+                    payload={
+                        "authorized": True,
+                        "scope": stored.scope or scope,
+                    },
+                )
+            else:
+                cancel_interaction(token)
         except asyncio.CancelledError:
             raise
         except Exception:

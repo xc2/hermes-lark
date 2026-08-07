@@ -1177,6 +1177,8 @@ def _begin_interactive_tool(
     tool_name: str,
     params: Mapping[str, Any],
     ticket: Optional[ToolTicket],
+    *,
+    resume_previous_operation: bool = True,
 ) -> str:
     """Expose daemon-owned OAuth and card work as an honest host continuation."""
     if ticket is None or not ticket.message_id or not ticket.chat_id:
@@ -1187,7 +1189,19 @@ def _begin_interactive_tool(
     else:
         kind = "oauth_batch_auth"
         ttl_seconds = _OAUTH_TTL_SECONDS
-    interaction = _store_interaction(kind, tool_name, params, ticket, ttl_seconds)
+    context = (
+        {"resume_previous_operation": resume_previous_operation}
+        if kind == "oauth_batch_auth"
+        else None
+    )
+    interaction = _store_interaction(
+        kind,
+        tool_name,
+        params,
+        ticket,
+        ttl_seconds,
+        context=context,
+    )
     if tool_name == "feishu_ask_user_question":
         questions = params.get("questions")
         if not isinstance(questions, list) or not 1 <= len(questions) <= 6:
@@ -1344,6 +1358,7 @@ def invoke_openclaw_tool(
     event: Any = None,
     ticket: Any = None,
     tool_call_id: Optional[str] = None,
+    resume_previous_operation: bool = True,
 ) -> str:
     """Invoke one of the 39 pinned upstream tools by public name."""
     arguments = dict(params or {})
@@ -1394,7 +1409,12 @@ def invoke_openclaw_tool(
             indent=2,
         )
     if tool_name in _INTERACTIVE_TOOLS:
-        return _begin_interactive_tool(tool_name, arguments, resolved_ticket)
+        return _begin_interactive_tool(
+            tool_name,
+            arguments,
+            resolved_ticket,
+            resume_previous_operation=resume_previous_operation,
+        )
 
     request: Dict[str, Any] = {
         "action": "invoke",

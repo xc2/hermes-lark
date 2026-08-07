@@ -263,6 +263,7 @@ class FeishuInChannelCommandTests(unittest.TestCase):
         self.assertEqual(interaction.ticket.account_id, "work")
         self.assertEqual(interaction.ticket.chat_id, "oc_work")
         self.assertEqual(interaction.ticket.sender_open_id, "ou_work")
+        self.assertFalse(interaction.context["resume_previous_operation"])
 
     def test_auth_routes_sources_from_hosts_without_transport_provenance(
         self,
@@ -426,7 +427,9 @@ class FeishuInChannelCommandTests(unittest.TestCase):
             _params: object,
             *,
             ticket: object,
+            resume_previous_operation: bool,
         ) -> str:
+            self.assertFalse(resume_previous_operation)
             observed.append(
                 (
                     ticket.account_id,
