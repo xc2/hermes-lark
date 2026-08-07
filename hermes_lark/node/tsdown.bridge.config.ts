@@ -2,6 +2,7 @@
  * Reproducible bundle configuration for the pinned openclaw-lark sources.
  */
 
+import { realpathSync } from "node:fs";
 import { resolve } from "node:path";
 
 /** Pinned source checkout supplied explicitly by the bundle builder. */
@@ -14,12 +15,12 @@ if (!UPSTREAM_SOURCE) {
 }
 
 /** Absolute pinned upstream source root used by module aliases. */
-const UPSTREAM_ROOT = resolve(UPSTREAM_SOURCE);
+const UPSTREAM_ROOT = realpathSync(resolve(UPSTREAM_SOURCE));
 
 /** Directory containing the bridge shims. */
 const BRIDGE_ROOT = resolve(import.meta.dirname);
 
-/** Resolve aliases that remove the OpenClaw daemon/runtime dependency. */
+/** Resolve bridge shims and normalize document comments to user identity. */
 const bridgeAliasPlugin = {
   name: "hermes-openclaw-tool-bridge-alias",
   resolveId(source: string): string | null {
@@ -38,6 +39,44 @@ const bridgeAliasPlugin = {
     }
     return null;
   },
+  transform(code: string, id: string): { code: string; map: null } | null {
+    if (
+      id !==
+      resolve(UPSTREAM_ROOT, "src", "tools", "oapi", "drive", "doc-comments.ts")
+    ) {
+      return null;
+    }
+
+    const tenantCallPattern = /\{ as: 'tenant' \}/g;
+    const tenantCalls = code.match(tenantCallPattern) ?? [];
+    if (tenantCalls.length !== 6) {
+      throw new Error(
+        `Expected 6 tenant doc-comment calls, found ${tenantCalls.length}`,
+      );
+    }
+
+    const rawRequestPattern =
+      /\(sdk\) => \(sdk as any\)\.request\(\{([\s\S]*?)\n                \}\),\n                \{ as: 'user' \},/g;
+    const userIdentityCode = code.replaceAll(
+      "{ as: 'tenant' }",
+      "{ as: 'user' }",
+    );
+    const rawRequests = userIdentityCode.match(rawRequestPattern) ?? [];
+    if (rawRequests.length !== 2) {
+      throw new Error(
+        `Expected 2 raw doc-comment reply calls, found ${rawRequests.length}`,
+      );
+    }
+
+    return {
+      code: userIdentityCode.replace(
+        rawRequestPattern,
+        (_match, payload: string) =>
+          `(sdk, opts) => (sdk as any).request({${payload}\n                }, opts),\n                { as: 'user' },`,
+      ),
+      map: null,
+    };
+  },
 };
 
 /** tsdown build definition for a single self-contained ESM artifact. */
@@ -54,7 +93,7 @@ export default {
   minify: true,
   treeshake: true,
   banner:
-    "/*! Bundled from larksuite/openclaw-lark commit dde0be3680d6fd5443cab426c8f4b3216266346a (MIT). */",
+    "/*! Bundled from larksuite/openclaw-lark commit dde0be3680d6fd5443cab426c8f4b3216266346a with the Hermes doc-comments user-identity override (MIT). */",
   plugins: [bridgeAliasPlugin],
   deps: {
     neverBundle: [/^node:/],

@@ -11,6 +11,8 @@ Do not edit the generated file manually.
 
 - Upstream repository: `https://github.com/larksuite/openclaw-lark`
 - Upstream commit: `dde0be3680d6fd5443cab426c8f4b3216266346a`
+- Downstream override: all `feishu_doc_comments` actions use user identity, as
+  promised by the upstream tool description
 - Build configuration: `tsdown.bridge.config.ts`
 - Source entry point: `bridge-entry.ts`
 - Expected digest: `openclaw_tools_bridge.mjs.sha256`
