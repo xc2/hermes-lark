@@ -5734,6 +5734,22 @@ class FeishuAdapter(BasePlatformAdapter):
         flow_tokens.pop(flow_key, None)
         getattr(self, "_openclaw_oauth_flow_scopes", {}).pop(flow_key, None)
 
+    def _finish_openclaw_oauth_interaction(
+        self,
+        flow_key: str,
+        token: str,
+        *,
+        cancel_pending: bool,
+    ) -> None:
+        """Clear terminal OAuth flow and interaction state."""
+        from .openclaw_tools import cancel_interaction
+
+        self._clear_openclaw_oauth_flow(flow_key, token)
+        if cancel_pending:
+            cancel_interaction(token)
+        with self._openclaw_submitted_lock:
+            self._openclaw_interaction_messages.pop(token, None)
+
     async def _finish_openclaw_oauth_start_failure(
         self,
         *,
@@ -5743,8 +5759,6 @@ class FeishuAdapter(BasePlatformAdapter):
         label: str,
     ) -> bool:
         """Show one startup failure and consume its pending continuation."""
-        from .openclaw_tools import cancel_interaction
-
         token = str(interaction.token or "")
         with self._openclaw_submitted_lock:
             has_message = bool(
@@ -5758,10 +5772,11 @@ class FeishuAdapter(BasePlatformAdapter):
                 card,
                 label=label,
             )
-        self._clear_openclaw_oauth_flow(flow_key, token)
-        cancel_interaction(token)
-        with self._openclaw_submitted_lock:
-            self._openclaw_interaction_messages.pop(token, None)
+        self._finish_openclaw_oauth_interaction(
+            flow_key,
+            token,
+            cancel_pending=True,
+        )
         return False
 
     async def _start_openclaw_oauth_interaction(
@@ -5769,18 +5784,16 @@ class FeishuAdapter(BasePlatformAdapter):
         interaction: Any,
         *,
         requested_scopes: Optional[Sequence[str]] = None,
-        force_device_flow: bool = False,
     ) -> bool:
         """Plan, present, and asynchronously poll one OAuth Device Flow."""
         from .oauth_runtime import OAuthOwnerAccessDeniedError
-        from .openclaw_tools import cancel_interaction
 
         token = str(interaction.token or "")
         sender_open_id = str(interaction.ticket.sender_open_id or "")
         is_batch = str(interaction.kind or "") == "oauth_batch_auth"
         oauth_intent = self._openclaw_oauth_intent(interaction)
         resumes_previous_operation = oauth_intent == "resume"
-        force_device_flow = force_device_flow or str(interaction.kind or "") == "oauth"
+        requires_device_flow = str(interaction.kind or "") == "oauth"
         current_task = asyncio.current_task()
         if current_task is not None:
             self._track_openclaw_oauth_task(token, current_task)
@@ -5855,11 +5868,11 @@ class FeishuAdapter(BasePlatformAdapter):
                     is_batch=True,
                 )
 
-            if force_device_flow:
+            if requires_device_flow:
                 scope = " ".join(plan.available_scopes)
             else:
                 scope = plan.scope
-            if not force_device_flow and plan.complete:
+            if not requires_device_flow and plan.complete:
                 if requested or is_batch:
                     if not resumes_previous_operation:
                         delivered = await self._send_openclaw_host_card(
@@ -5867,10 +5880,11 @@ class FeishuAdapter(BasePlatformAdapter):
                             self._build_openclaw_standalone_oauth_success_card(),
                             label="OAuth success card",
                         )
-                        self._clear_openclaw_oauth_flow(flow_key, token)
-                        cancel_interaction(token)
-                        with self._openclaw_submitted_lock:
-                            self._openclaw_interaction_messages.pop(token, None)
+                        self._finish_openclaw_oauth_interaction(
+                            flow_key,
+                            token,
+                            cancel_pending=True,
+                        )
                         return delivered
                     self._clear_openclaw_oauth_flow(flow_key, token)
                     self._schedule_openclaw_continuation(
@@ -5932,10 +5946,11 @@ class FeishuAdapter(BasePlatformAdapter):
             self._track_openclaw_oauth_task(token, poll_task)
             return True
         except asyncio.CancelledError:
-            self._clear_openclaw_oauth_flow(flow_key, token)
-            cancel_interaction(token)
-            with self._openclaw_submitted_lock:
-                self._openclaw_interaction_messages.pop(token, None)
+            self._finish_openclaw_oauth_interaction(
+                flow_key,
+                token,
+                cancel_pending=True,
+            )
             raise
         except OAuthOwnerAccessDeniedError:
             logger.warning(
@@ -5974,10 +5989,10 @@ class FeishuAdapter(BasePlatformAdapter):
     ) -> None:
         """Finish Device Flow, enforce identity, and resume the agent turn."""
         from .oauth_runtime import OAuthIdentityMismatchError
-        from .openclaw_tools import cancel_interaction
 
         token = str(interaction.token or "")
         sender_open_id = str(interaction.ticket.sender_open_id or "")
+        cancel_pending = True
         try:
             result = await runtime.poll_device_token(authorization)
             if not result.ok or result.token is None:
@@ -5985,7 +6000,6 @@ class FeishuAdapter(BasePlatformAdapter):
                     token,
                     self._build_openclaw_oauth_failed_card(result.message),
                 )
-                cancel_interaction(token)
                 return
             try:
                 stored = await runtime.complete_authorization(
@@ -5997,7 +6011,6 @@ class FeishuAdapter(BasePlatformAdapter):
                     token,
                     self._build_openclaw_oauth_identity_mismatch_card(),
                 )
-                cancel_interaction(token)
                 return
 
             resumes_previous_operation = (
@@ -6022,9 +6035,9 @@ class FeishuAdapter(BasePlatformAdapter):
                         "scope": stored.scope or scope,
                     },
                 )
-            else:
-                cancel_interaction(token)
+                cancel_pending = False
         except asyncio.CancelledError:
+            cancel_pending = False
             raise
         except Exception:
             logger.warning(
@@ -6038,11 +6051,12 @@ class FeishuAdapter(BasePlatformAdapter):
                     "Authorization failed. Please start it again."
                 ),
             )
-            cancel_interaction(token)
         finally:
-            self._clear_openclaw_oauth_flow(flow_key, token)
-            with self._openclaw_submitted_lock:
-                self._openclaw_interaction_messages.pop(token, None)
+            self._finish_openclaw_oauth_interaction(
+                flow_key,
+                token,
+                cancel_pending=cancel_pending,
+            )
 
     @staticmethod
     def _build_openclaw_oauth_card(
@@ -8142,7 +8156,6 @@ class FeishuAdapter(BasePlatformAdapter):
                 await self._start_openclaw_oauth_interaction(
                     interaction,
                     requested_scopes=user_scopes,
-                    force_device_flow=True,
                 )
                 return
             await self._resume_and_inject_openclaw_continuation(

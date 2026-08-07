@@ -52,7 +52,6 @@ class _FakeOAuthRuntime:
         poll_result: Any | None = None,
         complete_error: BaseException | None = None,
         poll_gate: asyncio.Event | None = None,
-        refresh_result: Any | None = None,
     ) -> None:
         self.plan = plan
         self.poll_result = poll_result or SimpleNamespace(
@@ -62,7 +61,6 @@ class _FakeOAuthRuntime:
         )
         self.complete_error = complete_error
         self.poll_gate = poll_gate
-        self.refresh_result = refresh_result
         self.plan_calls: list[tuple[Any, str, list[str], bool]] = []
         self.refresh_calls: list[str] = []
         self.requested_device_scopes: list[str] = []
@@ -88,7 +86,7 @@ class _FakeOAuthRuntime:
     async def refresh(self, sender: str) -> Any | None:
         """Record one authoritative refresh of an existing user grant."""
         self.refresh_calls.append(sender)
-        return self.refresh_result
+        return None
 
     async def request_device_authorization(self, scope: str) -> Any:
         """Return one bounded Device Flow challenge."""
@@ -555,7 +553,6 @@ class OAuthAdapterTests(unittest.IsolatedAsyncioTestCase):
         adapter = self._new_adapter()
         runtime = _FakeOAuthRuntime(
             _FakeScopePlan((), total=1, already=1),
-            refresh_result=SimpleNamespace(scope="scope.a"),
         )
         sent, _updates = self._install_delivery_stubs(adapter)
         captured = self._install_synthetic_stubs(adapter)
@@ -891,11 +888,8 @@ class OAuthAdapterTests(unittest.IsolatedAsyncioTestCase):
             interaction_value: Any,
             *,
             requested_scopes: Sequence[str],
-            force_device_flow: bool,
         ) -> bool:
-            starts.append(
-                (interaction_value, list(requested_scopes), force_device_flow)
-            )
+            starts.append((interaction_value, list(requested_scopes)))
             return True
 
         adapter._start_openclaw_oauth_interaction = start_oauth
@@ -910,8 +904,8 @@ class OAuthAdapterTests(unittest.IsolatedAsyncioTestCase):
         await asyncio.gather(*scheduled)
 
         self.assertEqual(response.toast.type, "success")
+        self.assertEqual(starts[0][0].kind, "oauth")
         self.assertEqual(starts[0][1], ["calendar:calendar"])
-        self.assertTrue(starts[0][2])
         self.assertIsNotNone(
             self.tools.get_pending_interaction(interaction.token)
         )
@@ -947,11 +941,8 @@ class OAuthAdapterTests(unittest.IsolatedAsyncioTestCase):
             interaction_value: Any,
             *,
             requested_scopes: Sequence[str],
-            force_device_flow: bool,
         ) -> bool:
-            starts.append(
-                (interaction_value, list(requested_scopes), force_device_flow)
-            )
+            starts.append((interaction_value, list(requested_scopes)))
             return True
 
         adapter._start_openclaw_oauth_interaction = start_oauth
@@ -966,11 +957,11 @@ class OAuthAdapterTests(unittest.IsolatedAsyncioTestCase):
         await asyncio.gather(*scheduled)
 
         self.assertEqual(response.toast.type, "success")
+        self.assertEqual(starts[0][0].kind, "oauth")
         self.assertEqual(
             starts[0][1],
             ["scope.app_missing", "scope.user_already_enabled"],
         )
-        self.assertTrue(starts[0][2])
         self.tools.cancel_interaction(interaction.token)
 
     async def test_app_permission_callback_validates_account_chat_and_operator(
