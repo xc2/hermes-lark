@@ -25,11 +25,12 @@ class _FakeScopePlan:
         self,
         scopes: Sequence[str],
         *,
+        available: Sequence[str] | None = None,
         total: int | None = None,
         already: int = 0,
         unavailable: Sequence[str] = (),
     ) -> None:
-        self.available_scopes = tuple(scopes)
+        self.available_scopes = tuple(scopes if available is None else available)
         self.scopes_to_authorize = tuple(scopes)
         self.already_granted_scopes = ()
         self.unavailable_scopes = tuple(unavailable)
@@ -61,6 +62,7 @@ class _FakeOAuthRuntime:
         self.complete_error = complete_error
         self.poll_gate = poll_gate
         self.plan_calls: list[tuple[Any, str, list[str], bool]] = []
+        self.refresh_calls: list[str] = []
         self.requested_device_scopes: list[str] = []
 
     async def plan_authorization(
@@ -79,6 +81,11 @@ class _FakeOAuthRuntime:
 
     async def get_valid_token(self, sender: str) -> None:
         """Represent an account without an existing reusable token."""
+        return None
+
+    async def refresh(self, sender: str) -> Any | None:
+        """Record one authoritative refresh of an existing user grant."""
+        self.refresh_calls.append(sender)
         return None
 
     async def request_device_authorization(self, scope: str) -> Any:
@@ -104,6 +111,44 @@ class _FakeOAuthRuntime:
         if self.complete_error is not None:
             raise self.complete_error
         return SimpleNamespace(scope=str(getattr(grant, "scope", "") or "scope.a"))
+
+
+class _RevokedOAuthRuntime(_FakeOAuthRuntime):
+    """Expose a stale complete plan until remote refresh clears it."""
+
+    def __init__(self) -> None:
+        super().__init__(
+            _FakeScopePlan(
+                (),
+                available=("scope.a",),
+                total=1,
+                already=1,
+            )
+        )
+        self.events: list[str] = []
+
+    async def plan_authorization(
+        self,
+        application: Any,
+        sender: str,
+        requested: Sequence[str],
+        *,
+        is_batch: bool,
+    ) -> Any:
+        """Record which side of refresh produced the current plan."""
+        self.events.append("plan")
+        return await super().plan_authorization(
+            application,
+            sender,
+            requested,
+            is_batch=is_batch,
+        )
+
+    async def refresh(self, sender: str) -> Any | None:
+        """Model remote revocation by clearing the stale local grant."""
+        self.events.append("refresh")
+        self.plan = _FakeScopePlan(["scope.a"], total=1)
+        return await super().refresh(sender)
 
 
 class OAuthAdapterTests(unittest.IsolatedAsyncioTestCase):
@@ -177,6 +222,7 @@ class OAuthAdapterTests(unittest.IsolatedAsyncioTestCase):
         kind: str,
         *,
         scopes: Sequence[str] = (),
+        oauth_intent: str | None = None,
         sender: str = "ou_owner",
         sender_user_id: str = "u_owner",
         chat_id: str = "oc_chat",
@@ -192,18 +238,21 @@ class OAuthAdapterTests(unittest.IsolatedAsyncioTestCase):
             thread_id="omt_thread",
             session_thread_id=f"om_{kind}",
         )
+        context: dict[str, Any] = {
+            "authorization": {
+                "scopes": list(scopes),
+                "app_id": "cli_app",
+            },
+        }
+        if kind == "oauth_batch_auth":
+            context["oauth_intent"] = oauth_intent or "resume"
         return self.tools._store_interaction(
             kind,
             "feishu_calendar_event",
             {},
             ticket,
             900,
-            context={
-                "authorization": {
-                    "scopes": list(scopes),
-                    "app_id": "cli_app",
-                }
-            },
+            context=context,
         )
 
     def _install_delivery_stubs(self, adapter: Any) -> tuple[list[Any], list[Any]]:
@@ -296,6 +345,40 @@ class OAuthAdapterTests(unittest.IsolatedAsyncioTestCase):
         self.assertIsNone(self.tools.get_pending_interaction(interaction.token))
         self.assertEqual(adapter._openclaw_oauth_flow_tokens, {})
 
+    async def test_failed_tool_oauth_reauthorizes_before_resuming_session(
+        self,
+    ) -> None:
+        """A failed user tool must not trust its stale locally granted scope."""
+        interaction = self._store_interaction("oauth", scopes=["scope.a"])
+        adapter = self._new_adapter()
+        runtime = _FakeOAuthRuntime(
+            _FakeScopePlan(
+                (),
+                available=("scope.a",),
+                total=1,
+                already=1,
+            )
+        )
+        self._install_delivery_stubs(adapter)
+        captured = self._install_synthetic_stubs(adapter)
+        adapter._fetch_openclaw_application_info = self._application_fetch(
+            user_scopes=("scope.a",)
+        )
+        adapter._create_openclaw_oauth_runtime = lambda: runtime
+
+        started = await adapter._start_openclaw_oauth_interaction(interaction)
+        poll_task = adapter._openclaw_oauth_tasks[interaction.token]
+        await poll_task
+
+        self.assertTrue(started)
+        self.assertEqual(runtime.requested_device_scopes, ["scope.a"])
+        self.assertEqual(len(captured), 1)
+        self.assertEqual(
+            captured[0].text,
+            "I have authorized my Feishu account. Please continue the previous "
+            "operation.",
+        )
+
     async def test_identity_mismatch_fails_closed_without_injection(self) -> None:
         interaction = self._store_interaction("oauth", scopes=["scope.a"])
         adapter = self._new_adapter()
@@ -364,7 +447,10 @@ class OAuthAdapterTests(unittest.IsolatedAsyncioTestCase):
         self,
     ) -> None:
         """A nonempty app scope set must expose the Device Flow prerequisite."""
-        interaction = self._store_interaction("oauth_batch_auth")
+        interaction = self._store_interaction(
+            "oauth_batch_auth",
+            oauth_intent="standalone",
+        )
         adapter = self._new_adapter()
         runtime = _FakeOAuthRuntime(_FakeScopePlan(["scope.a"]))
         sent, updates = self._install_delivery_stubs(adapter)
@@ -455,6 +541,153 @@ class OAuthAdapterTests(unittest.IsolatedAsyncioTestCase):
             runtime.requested_device_scopes,
             ["scope.a scope.b"],
         )
+
+    async def test_command_auth_refreshes_remote_and_does_not_resume_session(
+        self,
+    ) -> None:
+        """A standalone auth command must verify remotely without resuming work."""
+        interaction = self._store_interaction(
+            "oauth_batch_auth",
+            oauth_intent="standalone",
+        )
+        adapter = self._new_adapter()
+        runtime = _FakeOAuthRuntime(
+            _FakeScopePlan((), total=1, already=1),
+        )
+        sent, _updates = self._install_delivery_stubs(adapter)
+        captured = self._install_synthetic_stubs(adapter)
+        adapter._fetch_openclaw_application_info = self._application_fetch(
+            user_scopes=("scope.a",)
+        )
+        adapter._create_openclaw_oauth_runtime = lambda: runtime
+
+        started = await adapter._start_openclaw_oauth_interaction(interaction)
+
+        self.assertTrue(started)
+        self.assertEqual(runtime.refresh_calls, ["ou_owner"])
+        self.assertEqual(len(runtime.plan_calls), 2)
+        self.assertEqual(runtime.requested_device_scopes, [])
+        self.assertEqual(captured, [])
+        card = __import__("json").loads(sent[-1]["payload"])
+        self.assertEqual(card["header"]["template"], "green")
+        content = card["body"]["elements"][0]["content"]
+        self.assertIn("You can now use tools", content)
+        self.assertNotIn("Continuing with your request", content)
+        self.assertIsNone(self.tools.get_pending_interaction(interaction.token))
+
+    async def test_direct_batch_auth_reauthorizes_revoked_grant_before_resuming(
+        self,
+    ) -> None:
+        """A direct OAuth tool must verify remotely before continuation."""
+        interaction = self._store_interaction(
+            "oauth_batch_auth",
+            oauth_intent="resume",
+        )
+        adapter = self._new_adapter()
+        runtime = _RevokedOAuthRuntime()
+        _sent, updates = self._install_delivery_stubs(adapter)
+        captured = self._install_synthetic_stubs(adapter)
+        adapter._fetch_openclaw_application_info = self._application_fetch(
+            user_scopes=("scope.a",)
+        )
+        adapter._create_openclaw_oauth_runtime = lambda: runtime
+
+        started = await adapter._start_openclaw_oauth_interaction(interaction)
+        await adapter._openclaw_oauth_tasks[interaction.token]
+
+        self.assertTrue(started)
+        self.assertEqual(runtime.events, ["plan", "refresh", "plan"])
+        self.assertEqual(runtime.refresh_calls, ["ou_owner"])
+        self.assertEqual(runtime.requested_device_scopes, ["scope.a"])
+        self.assertEqual(len(captured), 1)
+        self.assertIn(
+            "continue the previous operation",
+            captured[0].text,
+        )
+        content = updates[-1][1]["body"]["elements"][0]["content"]
+        self.assertIn("Continuing with your request", content)
+        self.assertIsNone(self.tools.get_pending_interaction(interaction.token))
+
+    async def test_command_auth_rejects_non_owner_before_refreshing_credentials(
+        self,
+    ) -> None:
+        """A non-owner standalone command must not mutate stored credentials."""
+        owner_denied_error = self.oauth_runtime.OAuthOwnerAccessDeniedError
+
+        class OwnerDeniedRuntime(_FakeOAuthRuntime):
+            """Reject the initial authorization plan as an owner mismatch."""
+
+            async def plan_authorization(
+                self,
+                application: Any,
+                sender: str,
+                requested: Sequence[str],
+                *,
+                is_batch: bool,
+            ) -> Any:
+                """Record the denied plan without allowing a refresh."""
+                self.plan_calls.append(
+                    (application, sender, list(requested), is_batch)
+                )
+                raise owner_denied_error("owner_mismatch")
+
+        interaction = self._store_interaction(
+            "oauth_batch_auth",
+            oauth_intent="standalone",
+        )
+        adapter = self._new_adapter()
+        runtime = OwnerDeniedRuntime(_FakeScopePlan((), total=1, already=1))
+        sent, updates = self._install_delivery_stubs(adapter)
+        adapter._fetch_openclaw_application_info = self._application_fetch(
+            user_scopes=("scope.a",)
+        )
+        adapter._create_openclaw_oauth_runtime = lambda: runtime
+
+        started = await adapter._start_openclaw_oauth_interaction(interaction)
+
+        self.assertFalse(started)
+        self.assertEqual(len(runtime.plan_calls), 1)
+        self.assertEqual(runtime.refresh_calls, [])
+        self.assertEqual(runtime.requested_device_scopes, [])
+        self.assertEqual(updates, [])
+        card = __import__("json").loads(sent[-1]["payload"])
+        self.assertIn(
+            "Only the app owner",
+            card["body"]["elements"][0]["content"],
+        )
+        self.assertIsNone(self.tools.get_pending_interaction(interaction.token))
+
+    async def test_command_auth_reauthorizes_revoked_grant_without_resuming_session(
+        self,
+    ) -> None:
+        """A revoked standalone grant must enter Device Flow and stop there."""
+        interaction = self._store_interaction(
+            "oauth_batch_auth",
+            oauth_intent="standalone",
+        )
+        adapter = self._new_adapter()
+        runtime = _RevokedOAuthRuntime()
+        _sent, updates = self._install_delivery_stubs(adapter)
+        captured = self._install_synthetic_stubs(adapter)
+        adapter._fetch_openclaw_application_info = self._application_fetch(
+            user_scopes=("scope.a",)
+        )
+        adapter._create_openclaw_oauth_runtime = lambda: runtime
+
+        started = await adapter._start_openclaw_oauth_interaction(interaction)
+        poll_task = adapter._openclaw_oauth_tasks[interaction.token]
+        await poll_task
+
+        self.assertTrue(started)
+        self.assertEqual(runtime.events, ["plan", "refresh", "plan"])
+        self.assertEqual(runtime.refresh_calls, ["ou_owner"])
+        self.assertEqual(runtime.requested_device_scopes, ["scope.a"])
+        self.assertEqual(captured, [])
+        self.assertEqual(updates[-1][1]["header"]["template"], "green")
+        content = updates[-1][1]["body"]["elements"][0]["content"]
+        self.assertIn("You can now use tools", content)
+        self.assertNotIn("Continuing with your request", content)
+        self.assertIsNone(self.tools.get_pending_interaction(interaction.token))
 
     async def test_interaction_host_routes_each_authorization_kind(self) -> None:
         oauth = self._store_interaction("oauth", scopes=["scope.a"])
@@ -655,11 +888,8 @@ class OAuthAdapterTests(unittest.IsolatedAsyncioTestCase):
             interaction_value: Any,
             *,
             requested_scopes: Sequence[str],
-            force_device_flow: bool,
         ) -> bool:
-            starts.append(
-                (interaction_value, list(requested_scopes), force_device_flow)
-            )
+            starts.append((interaction_value, list(requested_scopes)))
             return True
 
         adapter._start_openclaw_oauth_interaction = start_oauth
@@ -674,8 +904,8 @@ class OAuthAdapterTests(unittest.IsolatedAsyncioTestCase):
         await asyncio.gather(*scheduled)
 
         self.assertEqual(response.toast.type, "success")
+        self.assertEqual(starts[0][0].kind, "oauth")
         self.assertEqual(starts[0][1], ["calendar:calendar"])
-        self.assertTrue(starts[0][2])
         self.assertIsNotNone(
             self.tools.get_pending_interaction(interaction.token)
         )
@@ -711,11 +941,8 @@ class OAuthAdapterTests(unittest.IsolatedAsyncioTestCase):
             interaction_value: Any,
             *,
             requested_scopes: Sequence[str],
-            force_device_flow: bool,
         ) -> bool:
-            starts.append(
-                (interaction_value, list(requested_scopes), force_device_flow)
-            )
+            starts.append((interaction_value, list(requested_scopes)))
             return True
 
         adapter._start_openclaw_oauth_interaction = start_oauth
@@ -730,11 +957,11 @@ class OAuthAdapterTests(unittest.IsolatedAsyncioTestCase):
         await asyncio.gather(*scheduled)
 
         self.assertEqual(response.toast.type, "success")
+        self.assertEqual(starts[0][0].kind, "oauth")
         self.assertEqual(
             starts[0][1],
             ["scope.app_missing", "scope.user_already_enabled"],
         )
-        self.assertTrue(starts[0][2])
         self.tools.cancel_interaction(interaction.token)
 
     async def test_app_permission_callback_validates_account_chat_and_operator(

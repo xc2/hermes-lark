@@ -267,6 +267,7 @@ async def _handle_auth(_raw_args: str) -> str:
             "feishu_oauth_batch_auth",
             {},
             ticket=ticket,
+            oauth_intent="standalone",
         )
     except Exception as invoke_error:
         return f"❌ Authorization failed to start: {invoke_error}"
