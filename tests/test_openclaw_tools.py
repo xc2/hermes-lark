@@ -571,6 +571,10 @@ class OpenClawToolBridgeTests(unittest.TestCase):
         self.assertEqual(pending["error"], "authorization_pending")
         self.assertEqual(len(delivered), 1)
         self.assertEqual(delivered[0].kind, "oauth_batch_auth")
+        self.assertNotIn(
+            "resume_previous_operation",
+            delivered[0].context,
+        )
         self.assertTrue(
             self.module.cancel_interaction(pending["follow_up"]["token"])
         )

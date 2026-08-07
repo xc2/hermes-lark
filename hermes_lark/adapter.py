@@ -5495,12 +5495,10 @@ class FeishuAdapter(BasePlatformAdapter):
     def _openclaw_resumes_previous_operation(interaction: Any) -> bool:
         """Return whether successful authorization resumes a blocked tool."""
         if isinstance(interaction, dict):
-            context = interaction.get("context")
+            kind = interaction.get("kind")
         else:
-            context = getattr(interaction, "context", None)
-        if not isinstance(context, dict):
-            return True
-        return context.get("resume_previous_operation") is not False
+            kind = getattr(interaction, "kind", None)
+        return str(kind or "") in {"oauth", "app_permission"}
 
     def _track_openclaw_oauth_task(
         self,
@@ -5774,7 +5772,7 @@ class FeishuAdapter(BasePlatformAdapter):
         token = str(interaction.token or "")
         sender_open_id = str(interaction.ticket.sender_open_id or "")
         is_batch = str(interaction.kind or "") == "oauth_batch_auth"
-        resume_previous_operation = self._openclaw_resumes_previous_operation(
+        resumes_previous_operation = self._openclaw_resumes_previous_operation(
             interaction
         )
         force_device_flow = force_device_flow or str(interaction.kind or "") == "oauth"
@@ -5818,8 +5816,6 @@ class FeishuAdapter(BasePlatformAdapter):
                     ),
                     label="OAuth application-permission guidance card",
                 )
-            if is_batch and not resume_previous_operation:
-                await runtime.refresh(sender_open_id)
             plan = await runtime.plan_authorization(
                 application,
                 sender_open_id,
@@ -5845,6 +5841,14 @@ class FeishuAdapter(BasePlatformAdapter):
                 raise RuntimeError("application has no user scopes available for batch authorization")
             if requested and not plan.available_scopes:
                 raise RuntimeError("application has not enabled any requested user scope")
+            if is_batch:
+                await runtime.refresh(sender_open_id)
+                plan = await runtime.plan_authorization(
+                    application,
+                    sender_open_id,
+                    requested,
+                    is_batch=True,
+                )
 
             if force_device_flow:
                 scope = " ".join(plan.available_scopes)
@@ -5852,10 +5856,10 @@ class FeishuAdapter(BasePlatformAdapter):
                 scope = plan.scope
             if not force_device_flow and plan.complete:
                 if requested or is_batch:
-                    if not resume_previous_operation:
+                    if not resumes_previous_operation:
                         delivered = await self._send_openclaw_host_card(
                             interaction,
-                            self._build_openclaw_oauth_success_card(),
+                            self._build_openclaw_standalone_oauth_success_card(),
                             label="OAuth success card",
                         )
                         self._clear_openclaw_oauth_flow(flow_key, token)
@@ -5991,11 +5995,16 @@ class FeishuAdapter(BasePlatformAdapter):
                 cancel_interaction(token)
                 return
 
-            await self._update_openclaw_interaction_card(
-                token,
-                self._build_openclaw_oauth_success_card(),
+            resumes_previous_operation = (
+                self._openclaw_resumes_previous_operation(interaction)
             )
-            if self._openclaw_resumes_previous_operation(interaction):
+            success_card = (
+                self._build_openclaw_oauth_success_card()
+                if resumes_previous_operation
+                else self._build_openclaw_standalone_oauth_success_card()
+            )
+            await self._update_openclaw_interaction_card(token, success_card)
+            if resumes_previous_operation:
                 await self._resume_and_inject_openclaw_continuation(
                     token,
                     text=(
@@ -6203,6 +6212,20 @@ class FeishuAdapter(BasePlatformAdapter):
             title="Authorized",
             body=(
                 f"{brand} account authorized. Continuing with your request.\n\n"
+                "<font color='grey'>Ask me whenever you need to revoke it.</font>"
+            ),
+            template="green",
+            icon="yes_filled",
+        )
+
+    def _build_openclaw_standalone_oauth_success_card(self) -> Dict[str, Any]:
+        """Build the successful standalone account-authorization card."""
+        brand = "Lark" if self._domain_name == "lark" else "Feishu"
+        return self._build_openclaw_status_card(
+            title="Authorized",
+            body=(
+                f"{brand} account authorized. You can now use tools that "
+                "require user authorization.\n\n"
                 "<font color='grey'>Ask me whenever you need to revoke it.</font>"
             ),
             template="green",

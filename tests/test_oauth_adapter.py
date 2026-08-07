@@ -186,7 +186,6 @@ class OAuthAdapterTests(unittest.IsolatedAsyncioTestCase):
         kind: str,
         *,
         scopes: Sequence[str] = (),
-        resume_previous_operation: bool = True,
         sender: str = "ou_owner",
         sender_user_id: str = "u_owner",
         chat_id: str = "oc_chat",
@@ -213,7 +212,6 @@ class OAuthAdapterTests(unittest.IsolatedAsyncioTestCase):
                     "scopes": list(scopes),
                     "app_id": "cli_app",
                 },
-                "resume_previous_operation": resume_previous_operation,
             },
         )
 
@@ -505,10 +503,7 @@ class OAuthAdapterTests(unittest.IsolatedAsyncioTestCase):
         self,
     ) -> None:
         """A standalone auth command must verify remotely without resuming work."""
-        interaction = self._store_interaction(
-            "oauth_batch_auth",
-            resume_previous_operation=False,
-        )
+        interaction = self._store_interaction("oauth_batch_auth")
         adapter = self._new_adapter()
         runtime = _FakeOAuthRuntime(
             _FakeScopePlan((), total=1, already=1),
@@ -525,11 +520,59 @@ class OAuthAdapterTests(unittest.IsolatedAsyncioTestCase):
 
         self.assertTrue(started)
         self.assertEqual(runtime.refresh_calls, ["ou_owner"])
+        self.assertEqual(len(runtime.plan_calls), 2)
         self.assertEqual(runtime.requested_device_scopes, [])
         self.assertEqual(captured, [])
-        self.assertEqual(
-            __import__("json").loads(sent[-1]["payload"])["header"]["template"],
-            "green",
+        card = __import__("json").loads(sent[-1]["payload"])
+        self.assertEqual(card["header"]["template"], "green")
+        content = card["body"]["elements"][0]["content"]
+        self.assertIn("You can now use tools", content)
+        self.assertNotIn("Continuing with your request", content)
+        self.assertIsNone(self.tools.get_pending_interaction(interaction.token))
+
+    async def test_command_auth_rejects_non_owner_before_refreshing_credentials(
+        self,
+    ) -> None:
+        """A non-owner standalone command must not mutate stored credentials."""
+        owner_denied_error = self.oauth_runtime.OAuthOwnerAccessDeniedError
+
+        class OwnerDeniedRuntime(_FakeOAuthRuntime):
+            """Reject the initial authorization plan as an owner mismatch."""
+
+            async def plan_authorization(
+                self,
+                application: Any,
+                sender: str,
+                requested: Sequence[str],
+                *,
+                is_batch: bool,
+            ) -> Any:
+                """Record the denied plan without allowing a refresh."""
+                self.plan_calls.append(
+                    (application, sender, list(requested), is_batch)
+                )
+                raise owner_denied_error("owner_mismatch")
+
+        interaction = self._store_interaction("oauth_batch_auth")
+        adapter = self._new_adapter()
+        runtime = OwnerDeniedRuntime(_FakeScopePlan((), total=1, already=1))
+        sent, updates = self._install_delivery_stubs(adapter)
+        adapter._fetch_openclaw_application_info = self._application_fetch(
+            user_scopes=("scope.a",)
+        )
+        adapter._create_openclaw_oauth_runtime = lambda: runtime
+
+        started = await adapter._start_openclaw_oauth_interaction(interaction)
+
+        self.assertFalse(started)
+        self.assertEqual(len(runtime.plan_calls), 1)
+        self.assertEqual(runtime.refresh_calls, [])
+        self.assertEqual(runtime.requested_device_scopes, [])
+        self.assertEqual(updates, [])
+        card = __import__("json").loads(sent[-1]["payload"])
+        self.assertIn(
+            "Only the app owner",
+            card["body"]["elements"][0]["content"],
         )
         self.assertIsNone(self.tools.get_pending_interaction(interaction.token))
 
@@ -537,12 +580,47 @@ class OAuthAdapterTests(unittest.IsolatedAsyncioTestCase):
         self,
     ) -> None:
         """A revoked standalone grant must enter Device Flow and stop there."""
-        interaction = self._store_interaction(
-            "oauth_batch_auth",
-            resume_previous_operation=False,
-        )
+
+        class RevokedOAuthRuntime(_FakeOAuthRuntime):
+            """Expose a stale complete plan until remote refresh clears it."""
+
+            def __init__(self) -> None:
+                super().__init__(
+                    _FakeScopePlan(
+                        (),
+                        available=("scope.a",),
+                        total=1,
+                        already=1,
+                    )
+                )
+                self.events: list[str] = []
+
+            async def plan_authorization(
+                self,
+                application: Any,
+                sender: str,
+                requested: Sequence[str],
+                *,
+                is_batch: bool,
+            ) -> Any:
+                """Record which side of refresh produced the current plan."""
+                self.events.append("plan")
+                return await super().plan_authorization(
+                    application,
+                    sender,
+                    requested,
+                    is_batch=is_batch,
+                )
+
+            async def refresh(self, sender: str) -> Any | None:
+                """Model remote revocation by clearing the stale local grant."""
+                self.events.append("refresh")
+                self.plan = _FakeScopePlan(["scope.a"], total=1)
+                return await super().refresh(sender)
+
+        interaction = self._store_interaction("oauth_batch_auth")
         adapter = self._new_adapter()
-        runtime = _FakeOAuthRuntime(_FakeScopePlan(["scope.a"], total=1))
+        runtime = RevokedOAuthRuntime()
         _sent, updates = self._install_delivery_stubs(adapter)
         captured = self._install_synthetic_stubs(adapter)
         adapter._fetch_openclaw_application_info = self._application_fetch(
@@ -555,10 +633,14 @@ class OAuthAdapterTests(unittest.IsolatedAsyncioTestCase):
         await poll_task
 
         self.assertTrue(started)
+        self.assertEqual(runtime.events, ["plan", "refresh", "plan"])
         self.assertEqual(runtime.refresh_calls, ["ou_owner"])
         self.assertEqual(runtime.requested_device_scopes, ["scope.a"])
         self.assertEqual(captured, [])
         self.assertEqual(updates[-1][1]["header"]["template"], "green")
+        content = updates[-1][1]["body"]["elements"][0]["content"]
+        self.assertIn("You can now use tools", content)
+        self.assertNotIn("Continuing with your request", content)
         self.assertIsNone(self.tools.get_pending_interaction(interaction.token))
 
     async def test_interaction_host_routes_each_authorization_kind(self) -> None:
