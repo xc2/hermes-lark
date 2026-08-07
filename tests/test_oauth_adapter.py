@@ -115,6 +115,44 @@ class _FakeOAuthRuntime:
         return SimpleNamespace(scope=str(getattr(grant, "scope", "") or "scope.a"))
 
 
+class _RevokedOAuthRuntime(_FakeOAuthRuntime):
+    """Expose a stale complete plan until remote refresh clears it."""
+
+    def __init__(self) -> None:
+        super().__init__(
+            _FakeScopePlan(
+                (),
+                available=("scope.a",),
+                total=1,
+                already=1,
+            )
+        )
+        self.events: list[str] = []
+
+    async def plan_authorization(
+        self,
+        application: Any,
+        sender: str,
+        requested: Sequence[str],
+        *,
+        is_batch: bool,
+    ) -> Any:
+        """Record which side of refresh produced the current plan."""
+        self.events.append("plan")
+        return await super().plan_authorization(
+            application,
+            sender,
+            requested,
+            is_batch=is_batch,
+        )
+
+    async def refresh(self, sender: str) -> Any | None:
+        """Model remote revocation by clearing the stale local grant."""
+        self.events.append("refresh")
+        self.plan = _FakeScopePlan(["scope.a"], total=1)
+        return await super().refresh(sender)
+
+
 class OAuthAdapterTests(unittest.IsolatedAsyncioTestCase):
     """Verify OAuth polling, permission callbacks, and security boundaries."""
 
@@ -540,16 +578,16 @@ class OAuthAdapterTests(unittest.IsolatedAsyncioTestCase):
         self.assertNotIn("Continuing with your request", content)
         self.assertIsNone(self.tools.get_pending_interaction(interaction.token))
 
-    async def test_direct_batch_auth_resumes_session_without_remote_refresh(
+    async def test_direct_batch_auth_reauthorizes_revoked_grant_before_resuming(
         self,
     ) -> None:
-        """A direct OAuth tool must continue its originating agent operation."""
+        """A direct OAuth tool must verify remotely before continuation."""
         interaction = self._store_interaction(
             "oauth_batch_auth",
             oauth_intent="resume",
         )
         adapter = self._new_adapter()
-        runtime = _FakeOAuthRuntime(_FakeScopePlan(["scope.a"], total=1))
+        runtime = _RevokedOAuthRuntime()
         _sent, updates = self._install_delivery_stubs(adapter)
         captured = self._install_synthetic_stubs(adapter)
         adapter._fetch_openclaw_application_info = self._application_fetch(
@@ -561,8 +599,8 @@ class OAuthAdapterTests(unittest.IsolatedAsyncioTestCase):
         await adapter._openclaw_oauth_tasks[interaction.token]
 
         self.assertTrue(started)
-        self.assertEqual(runtime.refresh_calls, [])
-        self.assertEqual(len(runtime.plan_calls), 1)
+        self.assertEqual(runtime.events, ["plan", "refresh", "plan"])
+        self.assertEqual(runtime.refresh_calls, ["ou_owner"])
         self.assertEqual(runtime.requested_device_scopes, ["scope.a"])
         self.assertEqual(len(captured), 1)
         self.assertIn(
@@ -626,50 +664,12 @@ class OAuthAdapterTests(unittest.IsolatedAsyncioTestCase):
         self,
     ) -> None:
         """A revoked standalone grant must enter Device Flow and stop there."""
-
-        class RevokedOAuthRuntime(_FakeOAuthRuntime):
-            """Expose a stale complete plan until remote refresh clears it."""
-
-            def __init__(self) -> None:
-                super().__init__(
-                    _FakeScopePlan(
-                        (),
-                        available=("scope.a",),
-                        total=1,
-                        already=1,
-                    )
-                )
-                self.events: list[str] = []
-
-            async def plan_authorization(
-                self,
-                application: Any,
-                sender: str,
-                requested: Sequence[str],
-                *,
-                is_batch: bool,
-            ) -> Any:
-                """Record which side of refresh produced the current plan."""
-                self.events.append("plan")
-                return await super().plan_authorization(
-                    application,
-                    sender,
-                    requested,
-                    is_batch=is_batch,
-                )
-
-            async def refresh(self, sender: str) -> Any | None:
-                """Model remote revocation by clearing the stale local grant."""
-                self.events.append("refresh")
-                self.plan = _FakeScopePlan(["scope.a"], total=1)
-                return await super().refresh(sender)
-
         interaction = self._store_interaction(
             "oauth_batch_auth",
             oauth_intent="standalone",
         )
         adapter = self._new_adapter()
-        runtime = RevokedOAuthRuntime()
+        runtime = _RevokedOAuthRuntime()
         _sent, updates = self._install_delivery_stubs(adapter)
         captured = self._install_synthetic_stubs(adapter)
         adapter._fetch_openclaw_application_info = self._application_fetch(

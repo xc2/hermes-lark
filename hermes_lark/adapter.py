@@ -5846,7 +5846,7 @@ class FeishuAdapter(BasePlatformAdapter):
                 raise RuntimeError("application has no user scopes available for batch authorization")
             if requested and not plan.available_scopes:
                 raise RuntimeError("application has not enabled any requested user scope")
-            if is_batch and oauth_intent == "standalone":
+            if is_batch:
                 await runtime.refresh(sender_open_id)
                 plan = await runtime.plan_authorization(
                     application,
