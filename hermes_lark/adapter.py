@@ -5492,13 +5492,19 @@ class FeishuAdapter(BasePlatformAdapter):
         return scopes
 
     @staticmethod
-    def _openclaw_resumes_previous_operation(interaction: Any) -> bool:
-        """Return whether successful authorization resumes a blocked tool."""
+    def _openclaw_oauth_intent(interaction: Any) -> str:
+        """Return the continuation intent for one authorization interaction."""
         if isinstance(interaction, dict):
             kind = interaction.get("kind")
+            context = interaction.get("context")
         else:
             kind = getattr(interaction, "kind", None)
-        return str(kind or "") in {"oauth", "app_permission"}
+            context = getattr(interaction, "context", None)
+        if str(kind or "") in {"oauth", "app_permission"}:
+            return "resume"
+        if isinstance(context, dict) and context.get("oauth_intent") == "resume":
+            return "resume"
+        return "standalone"
 
     def _track_openclaw_oauth_task(
         self,
@@ -5772,9 +5778,8 @@ class FeishuAdapter(BasePlatformAdapter):
         token = str(interaction.token or "")
         sender_open_id = str(interaction.ticket.sender_open_id or "")
         is_batch = str(interaction.kind or "") == "oauth_batch_auth"
-        resumes_previous_operation = self._openclaw_resumes_previous_operation(
-            interaction
-        )
+        oauth_intent = self._openclaw_oauth_intent(interaction)
+        resumes_previous_operation = oauth_intent == "resume"
         force_device_flow = force_device_flow or str(interaction.kind or "") == "oauth"
         current_task = asyncio.current_task()
         if current_task is not None:
@@ -5841,7 +5846,7 @@ class FeishuAdapter(BasePlatformAdapter):
                 raise RuntimeError("application has no user scopes available for batch authorization")
             if requested and not plan.available_scopes:
                 raise RuntimeError("application has not enabled any requested user scope")
-            if is_batch:
+            if is_batch and oauth_intent == "standalone":
                 await runtime.refresh(sender_open_id)
                 plan = await runtime.plan_authorization(
                     application,
@@ -5996,7 +6001,7 @@ class FeishuAdapter(BasePlatformAdapter):
                 return
 
             resumes_previous_operation = (
-                self._openclaw_resumes_previous_operation(interaction)
+                self._openclaw_oauth_intent(interaction) == "resume"
             )
             success_card = (
                 self._build_openclaw_oauth_success_card()

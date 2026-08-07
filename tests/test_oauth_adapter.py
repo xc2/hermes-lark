@@ -186,6 +186,7 @@ class OAuthAdapterTests(unittest.IsolatedAsyncioTestCase):
         kind: str,
         *,
         scopes: Sequence[str] = (),
+        oauth_intent: str | None = None,
         sender: str = "ou_owner",
         sender_user_id: str = "u_owner",
         chat_id: str = "oc_chat",
@@ -201,18 +202,21 @@ class OAuthAdapterTests(unittest.IsolatedAsyncioTestCase):
             thread_id="omt_thread",
             session_thread_id=f"om_{kind}",
         )
+        context: dict[str, Any] = {
+            "authorization": {
+                "scopes": list(scopes),
+                "app_id": "cli_app",
+            },
+        }
+        if kind == "oauth_batch_auth":
+            context["oauth_intent"] = oauth_intent or "resume"
         return self.tools._store_interaction(
             kind,
             "feishu_calendar_event",
             {},
             ticket,
             900,
-            context={
-                "authorization": {
-                    "scopes": list(scopes),
-                    "app_id": "cli_app",
-                },
-            },
+            context=context,
         )
 
     def _install_delivery_stubs(self, adapter: Any) -> tuple[list[Any], list[Any]]:
@@ -407,7 +411,10 @@ class OAuthAdapterTests(unittest.IsolatedAsyncioTestCase):
         self,
     ) -> None:
         """A nonempty app scope set must expose the Device Flow prerequisite."""
-        interaction = self._store_interaction("oauth_batch_auth")
+        interaction = self._store_interaction(
+            "oauth_batch_auth",
+            oauth_intent="standalone",
+        )
         adapter = self._new_adapter()
         runtime = _FakeOAuthRuntime(_FakeScopePlan(["scope.a"]))
         sent, updates = self._install_delivery_stubs(adapter)
@@ -503,7 +510,10 @@ class OAuthAdapterTests(unittest.IsolatedAsyncioTestCase):
         self,
     ) -> None:
         """A standalone auth command must verify remotely without resuming work."""
-        interaction = self._store_interaction("oauth_batch_auth")
+        interaction = self._store_interaction(
+            "oauth_batch_auth",
+            oauth_intent="standalone",
+        )
         adapter = self._new_adapter()
         runtime = _FakeOAuthRuntime(
             _FakeScopePlan((), total=1, already=1),
@@ -530,6 +540,39 @@ class OAuthAdapterTests(unittest.IsolatedAsyncioTestCase):
         self.assertNotIn("Continuing with your request", content)
         self.assertIsNone(self.tools.get_pending_interaction(interaction.token))
 
+    async def test_direct_batch_auth_resumes_session_without_remote_refresh(
+        self,
+    ) -> None:
+        """A direct OAuth tool must continue its originating agent operation."""
+        interaction = self._store_interaction(
+            "oauth_batch_auth",
+            oauth_intent="resume",
+        )
+        adapter = self._new_adapter()
+        runtime = _FakeOAuthRuntime(_FakeScopePlan(["scope.a"], total=1))
+        _sent, updates = self._install_delivery_stubs(adapter)
+        captured = self._install_synthetic_stubs(adapter)
+        adapter._fetch_openclaw_application_info = self._application_fetch(
+            user_scopes=("scope.a",)
+        )
+        adapter._create_openclaw_oauth_runtime = lambda: runtime
+
+        started = await adapter._start_openclaw_oauth_interaction(interaction)
+        await adapter._openclaw_oauth_tasks[interaction.token]
+
+        self.assertTrue(started)
+        self.assertEqual(runtime.refresh_calls, [])
+        self.assertEqual(len(runtime.plan_calls), 1)
+        self.assertEqual(runtime.requested_device_scopes, ["scope.a"])
+        self.assertEqual(len(captured), 1)
+        self.assertIn(
+            "continue the previous operation",
+            captured[0].text,
+        )
+        content = updates[-1][1]["body"]["elements"][0]["content"]
+        self.assertIn("Continuing with your request", content)
+        self.assertIsNone(self.tools.get_pending_interaction(interaction.token))
+
     async def test_command_auth_rejects_non_owner_before_refreshing_credentials(
         self,
     ) -> None:
@@ -553,7 +596,10 @@ class OAuthAdapterTests(unittest.IsolatedAsyncioTestCase):
                 )
                 raise owner_denied_error("owner_mismatch")
 
-        interaction = self._store_interaction("oauth_batch_auth")
+        interaction = self._store_interaction(
+            "oauth_batch_auth",
+            oauth_intent="standalone",
+        )
         adapter = self._new_adapter()
         runtime = OwnerDeniedRuntime(_FakeScopePlan((), total=1, already=1))
         sent, updates = self._install_delivery_stubs(adapter)
@@ -618,7 +664,10 @@ class OAuthAdapterTests(unittest.IsolatedAsyncioTestCase):
                 self.plan = _FakeScopePlan(["scope.a"], total=1)
                 return await super().refresh(sender)
 
-        interaction = self._store_interaction("oauth_batch_auth")
+        interaction = self._store_interaction(
+            "oauth_batch_auth",
+            oauth_intent="standalone",
+        )
         adapter = self._new_adapter()
         runtime = RevokedOAuthRuntime()
         _sent, updates = self._install_delivery_stubs(adapter)

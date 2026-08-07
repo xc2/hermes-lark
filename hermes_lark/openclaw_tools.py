@@ -21,7 +21,7 @@ import uuid
 from dataclasses import asdict, dataclass
 from functools import lru_cache
 from pathlib import Path
-from typing import Any, Callable, Dict, Iterator, List, Mapping, Optional, Union
+from typing import Any, Callable, Dict, Iterator, List, Literal, Mapping, Optional, Union
 
 
 _PACKAGE_DIR = Path(__file__).resolve().parent
@@ -1177,6 +1177,8 @@ def _begin_interactive_tool(
     tool_name: str,
     params: Mapping[str, Any],
     ticket: Optional[ToolTicket],
+    *,
+    oauth_intent: Literal["resume", "standalone"] = "resume",
 ) -> str:
     """Expose daemon-owned OAuth and card work as an honest host continuation."""
     if ticket is None or not ticket.message_id or not ticket.chat_id:
@@ -1187,12 +1189,18 @@ def _begin_interactive_tool(
     else:
         kind = "oauth_batch_auth"
         ttl_seconds = _OAUTH_TTL_SECONDS
+    context = (
+        {"oauth_intent": oauth_intent}
+        if kind == "oauth_batch_auth"
+        else None
+    )
     interaction = _store_interaction(
         kind,
         tool_name,
         params,
         ticket,
         ttl_seconds,
+        context=context,
     )
     if tool_name == "feishu_ask_user_question":
         questions = params.get("questions")
@@ -1350,6 +1358,7 @@ def invoke_openclaw_tool(
     event: Any = None,
     ticket: Any = None,
     tool_call_id: Optional[str] = None,
+    oauth_intent: Literal["resume", "standalone"] = "resume",
 ) -> str:
     """Invoke one of the 39 pinned upstream tools by public name."""
     arguments = dict(params or {})
@@ -1404,6 +1413,7 @@ def invoke_openclaw_tool(
             tool_name,
             arguments,
             resolved_ticket,
+            oauth_intent=oauth_intent,
         )
 
     request: Dict[str, Any] = {
