@@ -53,7 +53,10 @@ the SDK's UAT request options; changing only their identity selector would leave
 the HTTP authorization on the tenant token. The build verifies the complete
 reviewed upstream source digest before applying the override, then also checks
 the expected selector and raw-request call-site counts. Any change to this
-module therefore requires the override to be reviewed before rebuilding.
+module therefore requires the override to be reviewed before rebuilding. Source
+text is normalized to LF before all three operations so LF and CRLF checkouts
+produce the same result. A focused mutation test verifies that dropping an SDK
+request option is rejected even when the selector counts remain unchanged.
 
 ## Localized tool contract
 
