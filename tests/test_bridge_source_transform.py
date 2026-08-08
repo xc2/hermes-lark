@@ -9,7 +9,9 @@ from pathlib import Path
 
 
 ROOT = Path(__file__).resolve().parents[1]
-BRIDGE_CONFIG_PATH = ROOT / "hermes_lark" / "node" / "tsdown.bridge.config.ts"
+BRIDGE_SOURCE_TRANSFORM_PATH = (
+    ROOT / "hermes_lark" / "node" / "bridge-source-transform.mjs"
+)
 
 
 class BridgeSourceTransformTests(unittest.TestCase):
@@ -23,12 +25,13 @@ import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import { pathToFileURL } from "node:url";
 
-/** Test configuration path and existing source root. */
-const [configPath, sourceRoot] = process.argv.slice(1);
-process.env.OPENCLAW_LARK_SOURCE = sourceRoot;
+/** Native ESM transform path supplied by the Python harness. */
+const [transformPath] = process.argv.slice(1);
 
 /** Production source-transform function under test. */
-const { transformDocCommentsSource } = await import(pathToFileURL(configPath));
+const { transformDocCommentsSource } = await import(
+  pathToFileURL(transformPath)
+);
 
 /** Minimal reviewed-shape source with six selectors and two raw replies. */
 const source = [
@@ -80,8 +83,7 @@ assert.throws(
                 "--input-type=module",
                 "--eval",
                 script,
-                str(BRIDGE_CONFIG_PATH),
-                str(ROOT),
+                str(BRIDGE_SOURCE_TRANSFORM_PATH),
             ],
             capture_output=True,
             check=False,
