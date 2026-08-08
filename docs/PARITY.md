@@ -50,9 +50,10 @@ identity while `patch` uses user identity. Hermes normalizes all six tenant call
 sites in that module to user identity during bundling so every documented
 action uses the requesting user's UAT. The two raw `reply` requests also receive
 the SDK's UAT request options; changing only their identity selector would leave
-the HTTP authorization on the tenant token. The build fails if either expected
-upstream call-site count changes, forcing the override to be reviewed against
-future upstream revisions.
+the HTTP authorization on the tenant token. The build verifies the complete
+reviewed upstream source digest before applying the override, then also checks
+the expected selector and raw-request call-site counts. Any change to this
+module therefore requires the override to be reviewed before rebuilding.
 
 ## Localized tool contract
 

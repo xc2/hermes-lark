@@ -2,6 +2,7 @@
  * Reproducible bundle configuration for the pinned openclaw-lark sources.
  */
 
+import { createHash } from "node:crypto";
 import { realpathSync } from "node:fs";
 import { resolve } from "node:path";
 
@@ -19,6 +20,10 @@ const UPSTREAM_ROOT = realpathSync(resolve(UPSTREAM_SOURCE));
 
 /** Directory containing the bridge shims. */
 const BRIDGE_ROOT = resolve(import.meta.dirname);
+
+/** Reviewed upstream source digest for the document-comment override. */
+const DOC_COMMENTS_SOURCE_SHA256 =
+  "a0f6b438befdb80f63036bfe507d6ba21d7d2bae17e6454a04b9548817e7b4bb";
 
 /** Resolve bridge shims and normalize document comments to user identity. */
 const bridgeAliasPlugin = {
@@ -45,6 +50,13 @@ const bridgeAliasPlugin = {
       resolve(UPSTREAM_ROOT, "src", "tools", "oapi", "drive", "doc-comments.ts")
     ) {
       return null;
+    }
+
+    const sourceDigest = createHash("sha256").update(code).digest("hex");
+    if (sourceDigest !== DOC_COMMENTS_SOURCE_SHA256) {
+      throw new Error(
+        `Expected doc-comment source ${DOC_COMMENTS_SOURCE_SHA256}, found ${sourceDigest}`,
+      );
     }
 
     const tenantCallPattern = /\{ as: 'tenant' \}/g;
