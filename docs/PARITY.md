@@ -35,12 +35,28 @@ It records upstream provenance independently from the implementation.
 | Skills | Nine skills and four reference files retain their inventory, identity frontmatter, command/tool references, and Hermes registration. |
 | Defaults | WebSocket transport, open group policy, mention-only bot admission, required group-root mention, bounded deduplication, and 12-hour message deduplication remain pinned. |
 | Events | Message, read, reaction, card action, bot membership, P2P entry, recall, document comment, and meeting invitation registrations remain present. |
-| Generated bridge | The checked-in Node bundle must match its reviewed SHA-256 digest and pinned upstream banner. |
+| Generated bridge | The checked-in Node bundle must match its reviewed SHA-256 digest and pinned upstream banner, including documented downstream overrides. |
 
 Focused unit tests cover commands, OAuth continuations, policy, thread routing,
 CardKit state, approvals, delivery, multi-account isolation, and callback
 authorization. The credentialed suite covers the live tenant paths documented
 in [`tests/e2e/README.md`](../tests/e2e/README.md).
+
+## Document-comment identity override
+
+The pinned upstream `feishu_doc_comments` description promises user-identity
+execution, but its `list`, `list_replies`, `create`, and `reply` paths use tenant
+identity while `patch` uses user identity. Hermes normalizes all six tenant call
+sites in that module to user identity during bundling so every documented
+action uses the requesting user's UAT. The two raw `reply` requests also receive
+the SDK's UAT request options; changing only their identity selector would leave
+the HTTP authorization on the tenant token. The build verifies the complete
+reviewed upstream source digest before applying the override, then also checks
+the expected selector and raw-request call-site counts. Any change to this
+module therefore requires the override to be reviewed before rebuilding. Source
+text is normalized to LF before all three operations so LF and CRLF checkouts
+produce the same result. A focused mutation test verifies that dropping an SDK
+request option is rejected even when the selector counts remain unchanged.
 
 ## Localized tool contract
 

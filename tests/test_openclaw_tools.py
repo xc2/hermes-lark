@@ -24,6 +24,7 @@ MODULE_PATH = ROOT / "hermes_lark" / "openclaw_tools.py"
 MANIFEST_PATH = ROOT / "hermes_lark" / "data" / "openclaw-tools.json"
 BUNDLE_PATH = ROOT / "hermes_lark" / "node" / "openclaw_tools_bridge.mjs"
 AUTO_AUTH_SHIM_PATH = ROOT / "hermes_lark" / "node" / "auto-auth-shim.ts"
+NODE_HTTP_REDIRECT_PATH = ROOT / "tests" / "node_http_redirect.cjs"
 
 
 def _load_module() -> ModuleType:
@@ -1432,6 +1433,229 @@ class OpenClawToolBridgeTests(unittest.TestCase):
                     }
                 )["found"]
             )
+
+    @unittest.skipUnless(shutil.which("node"), "Node.js is not installed")
+    def test_doc_comment_actions_use_user_identity(self) -> None:
+        """Every documented comment action must call Drive with the user's UAT."""
+        comment_requests: list[tuple[str, str, str]] = []
+        platform_requests: list[tuple[str, str]] = []
+        reply_payloads: list[dict[str, Any]] = []
+        action_responses: list[dict[str, Any]] = []
+        required_scopes = [
+            "wiki:node:read",
+            "docs:document.comment:read",
+            "docs:document.comment:create",
+            "docs:document.comment:update",
+            "offline_access",
+        ]
+
+        class CommentHandler(BaseHTTPRequestHandler):
+            """Serve identity checks and Drive comment requests."""
+
+            def log_message(self, _format: str, *args: Any) -> None:
+                """Keep the unit-test output free of HTTP access logs."""
+
+            def do_GET(self) -> None:
+                """Handle one mocked GET request."""
+                self._respond()
+
+            def do_POST(self) -> None:
+                """Handle one mocked POST request."""
+                self._respond()
+
+            def do_PATCH(self) -> None:
+                """Handle one mocked PATCH request."""
+                self._respond()
+
+            def _respond(self) -> None:
+                """Return the minimum valid response for the requested path."""
+                platform_requests.append((self.command, self.path))
+                status = 200
+                content_length = int(self.headers.get("Content-Length", "0"))
+                request_body = self.rfile.read(content_length)
+                if "tenant_access_token" in self.path:
+                    payload: dict[str, Any] = {
+                        "code": 0,
+                        "tenant_access_token": "tenant-token",
+                        "expire": 7200,
+                    }
+                elif "/application/v6/applications/" in self.path:
+                    payload = {
+                        "code": 0,
+                        "data": {
+                            "app": {
+                                "scopes": [
+                                    {
+                                        "scope": scope,
+                                        "token_types": ["user"],
+                                    }
+                                    for scope in required_scopes
+                                ],
+                                "owner": {
+                                    "owner_id": "ou_comment_user",
+                                    "owner_type": 2,
+                                },
+                            }
+                        },
+                    }
+                elif "/open-apis/drive/v1/files/" in self.path:
+                    request_path = self.path.split("?", 1)[0]
+                    comment_requests.append(
+                        (
+                            self.command,
+                            self.path,
+                            self.headers.get("Authorization", ""),
+                        )
+                    )
+                    if self.command == "GET" and request_path.endswith("/comments"):
+                        payload = {
+                            "code": 0,
+                            "data": {
+                                "items": [
+                                    {
+                                        "comment_id": "comment-1",
+                                        "reply_list": {"replies": [{"reply_id": "reply-1"}]},
+                                    }
+                                ],
+                                "has_more": False,
+                            },
+                        }
+                    elif self.command == "POST" and request_path.endswith("/comments"):
+                        payload = {
+                            "code": 0,
+                            "data": {"comment_id": "comment-created"},
+                        }
+                    elif self.command == "POST" and request_path.endswith("/replies"):
+                        reply_payload = json.loads(request_body)
+                        reply_payloads.append(reply_payload)
+                        if "content" in reply_payload:
+                            status = 400
+                            payload = {"code": 400, "msg": "retry fallback"}
+                        else:
+                            payload = {
+                                "code": 0,
+                                "data": {"reply_id": "reply-created"},
+                            }
+                    else:
+                        payload = {
+                            "code": 0,
+                            "data": {"items": [], "has_more": False},
+                        }
+                else:
+                    payload = {"code": 0, "data": {}}
+
+                raw = json.dumps(payload).encode("utf-8")
+                self.send_response(status)
+                self.send_header("Content-Type", "application/json")
+                self.send_header("Content-Length", str(len(raw)))
+                self.end_headers()
+                self.wfile.write(raw)
+
+        server = ThreadingHTTPServer(("127.0.0.1", 0), CommentHandler)
+        server_thread = threading.Thread(target=server.serve_forever, daemon=True)
+        server_thread.start()
+        self.addCleanup(server.server_close)
+        self.addCleanup(server.shutdown)
+
+        environment = {
+            **os.environ,
+            "HERMES_LARK_TEST_HTTP_PORT": str(server.server_port),
+        }
+        config = {
+            "channels": {
+                "feishu": {
+                    "enabled": True,
+                    "appId": "cli_comments",
+                    "appSecret": "test-secret",
+                    "domain": "http://open.feishu.cn",
+                }
+            },
+            "plugins": {"entries": {"feishu": {"enabled": False}}},
+        }
+        base_request = {
+            "action": "invoke",
+            "tool": "feishu_doc_comments",
+            "config": config,
+            "ticket": {
+                "messageId": "om_comment",
+                "chatId": "oc_comment",
+                "accountId": "default",
+                "senderOpenId": "ou_comment_user",
+                "chatType": "p2p",
+            },
+            "userToken": {
+                "accessToken": "user-comment-token",
+                "scope": " ".join(required_scopes),
+            },
+        }
+        actions = [
+            {"action": "list", "file_token": "doc-1", "file_type": "docx"},
+            {
+                "action": "list_replies",
+                "file_token": "doc-1",
+                "file_type": "docx",
+                "comment_id": "comment-1",
+            },
+            {
+                "action": "create",
+                "file_token": "doc-1",
+                "file_type": "docx",
+                "elements": [{"type": "text", "text": "new comment"}],
+            },
+            {
+                "action": "reply",
+                "file_token": "doc-1",
+                "file_type": "docx",
+                "comment_id": "comment-1",
+                "elements": [{"type": "text", "text": "new reply"}],
+            },
+            {
+                "action": "patch",
+                "file_token": "doc-1",
+                "file_type": "docx",
+                "comment_id": "comment-1",
+                "is_solved_value": True,
+            },
+        ]
+
+        for arguments in actions:
+            completed = subprocess.run(
+                [
+                    "node",
+                    "--require",
+                    str(NODE_HTTP_REDIRECT_PATH),
+                    str(BUNDLE_PATH),
+                ],
+                input=json.dumps({**base_request, "arguments": arguments}),
+                capture_output=True,
+                check=False,
+                text=True,
+                timeout=15,
+                env=environment,
+            )
+            self.assertEqual(completed.returncode, 0, completed.stderr)
+            response = json.loads(completed.stdout)
+            self.assertTrue(response["ok"], response)
+            self.assertNotIn(
+                "error",
+                response["result"]["details"],
+                {"response": response, "requests": platform_requests},
+            )
+            action_responses.append(response)
+
+        self.assertEqual(
+            len(comment_requests),
+            7,
+            {"requests": comment_requests, "responses": action_responses},
+        )
+        self.assertEqual(
+            {authorization for _, _, authorization in comment_requests},
+            {"Bearer user-comment-token"},
+            comment_requests,
+        )
+        self.assertEqual(len(reply_payloads), 2, reply_payloads)
+        self.assertIn("content", reply_payloads[0])
+        self.assertIn("reply_elements", reply_payloads[1])
 
     @unittest.skipUnless(shutil.which("node"), "Node.js is not installed")
     def test_bundle_serializes_rotating_refreshes_across_workers(self) -> None:

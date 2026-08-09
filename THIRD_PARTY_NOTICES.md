@@ -5,7 +5,7 @@ source from the pinned `larksuite/openclaw-lark` revision and the runtime
 dependencies listed below. This inventory was derived from the source map of
 a reproducible build at commit
 `dde0be3680d6fd5443cab426c8f4b3216266346a`. The checked-in bundle digest is
-`f7938a09724b76e79a7cea9aaf74f3cdc19b4a149d3ee0a1de6ed636169ad7ec`.
+`e0acf5c2cf024d19d2f25c03c90df1a80be31b5782e45e19b3cc3f95b2da4ef4`.
 
 The components remain under their respective licenses. Nothing in this file
 changes those terms. The project's own license and other derived-work notices
