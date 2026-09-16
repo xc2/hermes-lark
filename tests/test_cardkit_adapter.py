@@ -3,9 +3,11 @@
 from __future__ import annotations
 
 import asyncio
+import itertools
 import json
 import sys
 import tempfile
+import threading
 import types
 import unittest
 from pathlib import Path
@@ -173,6 +175,1030 @@ class CardKitAdapterTests(unittest.TestCase):
             update_call[1]["body"]["elements"][0]["element_id"],
             "streaming_content",
         )
+
+    def test_steer_freezes_the_old_card_and_streams_below_the_user_message(
+        self,
+    ) -> None:
+        """A same-turn steer rolls CardKit forward instead of editing above it."""
+        adapter, calls = self._adapter()
+        card_number = 0
+
+        async def create(card: dict[str, Any]) -> Any:
+            nonlocal card_number
+            card_number += 1
+            calls.append(("create", card))
+            return SimpleNamespace(
+                success=lambda: True,
+                data=SimpleNamespace(card_id=f"card-{card_number}"),
+            )
+
+        async def send_with_retry(**kwargs: Any) -> Any:
+            calls.append(("send", kwargs))
+            return SimpleNamespace(
+                success=lambda: True,
+                data=SimpleNamespace(message_id=f"om_card_{card_number}"),
+            )
+
+        adapter._cardkit_create = create
+        adapter._feishu_send_with_retry = send_with_retry
+        steer = self._event()
+        steer.message_id = "om_steer"
+
+        async def scenario() -> None:
+            state = await adapter._start_cardkit_turn(self._event())
+            await adapter._stream_cardkit_content(state, "partial answer")
+            await asyncio.sleep(0.01)
+
+            continued = await adapter._start_cardkit_turn(steer)
+
+            self.assertIs(continued, state)
+            self.assertEqual(state.message_id, "om_card_2")
+            state.turn_terminal = True
+            final = await adapter.edit_message(
+                "oc_chat",
+                "om_card_1",
+                "corrected final answer",
+                finalize=True,
+                metadata={"thread_id": "om_root"},
+            )
+            self.assertTrue(final.success)
+            self.assertEqual(final.message_id, "om_card_2")
+            self.assertNotIn(
+                ("oc_chat", "om_root"),
+                adapter._cardkit_states_by_route,
+            )
+
+        asyncio.run(scenario())
+
+        card_sends = [
+            call[1]
+            for call in calls
+            if call[0] == "send"
+            and json.loads(call[1]["payload"]).get("type") == "card"
+        ]
+        self.assertEqual(
+            [call["reply_to"] for call in card_sends],
+            ["om_root", "om_steer"],
+        )
+        boundary_cards = [
+            call[1]
+            for call in calls
+            if call[0] == "update"
+            and "Continued below" in json.dumps(call[1], ensure_ascii=False)
+        ]
+        self.assertEqual(len(boundary_cards), 1)
+        self.assertFalse(boundary_cards[0]["config"]["streaming_mode"])
+        self.assertNotIn(
+            "loading",
+            json.dumps(boundary_cards[0], ensure_ascii=False),
+        )
+        terminal_card = [call[1] for call in calls if call[0] == "update"][-1]
+        self.assertIn(
+            "corrected final answer",
+            json.dumps(terminal_card, ensure_ascii=False),
+        )
+
+    def test_silent_accepted_steer_still_opens_a_new_segment(self) -> None:
+        """Ack suppression and cooldown cannot break timeline ordering."""
+        adapter, calls = self._adapter()
+        adapter._chat_locks = __import__("collections").OrderedDict()
+        adapter._pending_messages = {}
+        adapter._remember_interactive_operator = lambda _event: None
+        card_number = 0
+
+        async def create(card: dict[str, Any]) -> Any:
+            nonlocal card_number
+            card_number += 1
+            calls.append(("create", card))
+            return SimpleNamespace(
+                success=lambda: True,
+                data=SimpleNamespace(card_id=f"card-{card_number}"),
+            )
+
+        async def send_with_retry(**kwargs: Any) -> Any:
+            calls.append(("send", kwargs))
+            return SimpleNamespace(
+                success=lambda: True,
+                data=SimpleNamespace(message_id=f"om_card_{card_number}"),
+            )
+
+        class BusyOwner:
+            """Expose the pinned Hermes busy-mode observations."""
+
+            _draining = False
+
+            @staticmethod
+            def _effective_busy_input_mode(_source: Any) -> str:
+                return "steer"
+
+            @staticmethod
+            def _session_key_for_source(_source: Any) -> str:
+                return "session-1"
+
+            @staticmethod
+            def _is_user_authorized(_source: Any) -> bool:
+                return True
+
+            @staticmethod
+            def _peek_session_state(_session_key: str) -> Any:
+                return None
+
+            async def handle(self, _event: Any, _session_key: str) -> bool:
+                return True
+
+        owner = BusyOwner()
+        adapter._busy_session_handler = owner.handle
+        adapter._cardkit_create = create
+        adapter._feishu_send_with_retry = send_with_retry
+
+        async def handle_message(_event: Any) -> None:
+            if getattr(_event, "message_id", "") == "om_queued_steer":
+                adapter._pending_messages["session-1"] = _event
+            return None
+
+        adapter.handle_message = handle_message
+        steer = self._event()
+        steer.text = "Only change the presentation."
+        steer.message_type = self.adapter_module.MessageType.TEXT
+        steer.message_id = "om_silent_steer"
+        steer.is_command = lambda: False
+        queued = self._event()
+        queued.text = "This could not be steered."
+        queued.message_type = self.adapter_module.MessageType.TEXT
+        queued.message_id = "om_queued_steer"
+        queued.is_command = lambda: False
+
+        async def scenario() -> None:
+            state = await adapter._start_cardkit_turn(self._event())
+
+            await adapter._handle_message_with_guards(steer)
+
+            self.assertEqual(state.message_id, "om_card_2")
+            self.assertEqual(
+                state.active_input_message_id,
+                "om_silent_steer",
+            )
+
+            await adapter._handle_message_with_guards(queued)
+
+            self.assertEqual(state.message_id, "om_card_2")
+            self.assertEqual(
+                state.active_input_message_id,
+                "om_silent_steer",
+            )
+
+        asyncio.run(scenario())
+
+        card_sends = [
+            call[1]
+            for call in calls
+            if call[0] == "send"
+            and json.loads(call[1]["payload"]).get("type") == "card"
+        ]
+        self.assertEqual(
+            [call["reply_to"] for call in card_sends],
+            ["om_root", "om_silent_steer"],
+        )
+
+    def test_origin_completion_closes_the_latest_steer_segment(
+        self,
+    ) -> None:
+        """The originating dispatch owns completion for its steered run."""
+        adapter, calls = self._adapter()
+        adapter._reactions_enabled = lambda: False
+        card_number = 0
+
+        async def create(card: dict[str, Any]) -> Any:
+            nonlocal card_number
+            card_number += 1
+            calls.append(("create", card))
+            return SimpleNamespace(
+                success=lambda: True,
+                data=SimpleNamespace(card_id=f"card-{card_number}"),
+            )
+
+        async def send_with_retry(**kwargs: Any) -> Any:
+            calls.append(("send", kwargs))
+            return SimpleNamespace(
+                success=lambda: True,
+                data=SimpleNamespace(message_id=f"om_card_{card_number}"),
+            )
+
+        adapter._cardkit_create = create
+        adapter._feishu_send_with_retry = send_with_retry
+        origin = self._event()
+        steer = self._event()
+        steer.message_id = "om_steer"
+
+        async def scenario() -> None:
+            state = await adapter._start_cardkit_turn(origin)
+            await adapter._start_cardkit_turn(steer)
+            await adapter.on_processing_complete(
+                origin,
+                self.adapter_module.ProcessingOutcome.FAILURE,
+            )
+
+            self.assertTrue(state.closed)
+            self.assertEqual(state.message_id, "om_card_2")
+            self.assertNotIn(
+                ("oc_chat", "om_root"),
+                adapter._cardkit_states_by_route,
+            )
+
+        asyncio.run(scenario())
+
+        terminal_card = [call[1] for call in calls if call[0] == "update"][-1]
+        self.assertIn("Error", json.dumps(terminal_card, ensure_ascii=False))
+        self.assertIn(
+            "The request failed before a response completed.",
+            json.dumps(terminal_card, ensure_ascii=False),
+        )
+
+    def test_failed_steer_segment_falls_back_to_a_regular_message(self) -> None:
+        """A failed continuation card does not swallow subsequent output."""
+        adapter, calls = self._adapter()
+        create_count = 0
+
+        async def create(card: dict[str, Any]) -> Any:
+            nonlocal create_count
+            create_count += 1
+            calls.append(("create", card))
+            if create_count == 2:
+                return SimpleNamespace(
+                    success=lambda: False,
+                    code=500,
+                    msg="create failed",
+                )
+            return SimpleNamespace(
+                success=lambda: True,
+                data=SimpleNamespace(card_id="card-1"),
+            )
+
+        async def send_with_retry(**kwargs: Any) -> Any:
+            calls.append(("send", kwargs))
+            payload = json.loads(kwargs["payload"])
+            message_id = (
+                "om_card"
+                if payload.get("type") == "card"
+                else "om_fallback"
+            )
+            return SimpleNamespace(
+                success=lambda: True,
+                data=SimpleNamespace(message_id=message_id),
+            )
+
+        adapter._cardkit_create = create
+        adapter._feishu_send_with_retry = send_with_retry
+        adapter._finalize_send_result = lambda response, _error: (
+            self.adapter_module.SendResult(
+                success=True,
+                message_id=response.data.message_id,
+            )
+        )
+        original_edit_message = adapter.edit_message
+
+        async def edit_message(
+            chat_id: str,
+            message_id: str,
+            content: str,
+            **kwargs: Any,
+        ) -> Any:
+            if message_id == "om_fallback":
+                calls.append(("regular_edit", content))
+                return self.adapter_module.SendResult(
+                    success=True,
+                    message_id=message_id,
+                )
+            return await original_edit_message(
+                chat_id,
+                message_id,
+                content,
+                **kwargs,
+            )
+
+        adapter.edit_message = edit_message
+        steer = self._event()
+        steer.message_id = "om_steer"
+
+        async def scenario() -> None:
+            state = await adapter._start_cardkit_turn(self._event())
+
+            continuation = await adapter._start_cardkit_turn(steer)
+
+            self.assertIsNone(continuation)
+            self.assertFalse(state.segment_open)
+            self.assertEqual(state.suspension_reason, "fallback")
+            fallback = await adapter.send(
+                "oc_chat",
+                "fallback answer",
+                reply_to="om_steer",
+                metadata={"thread_id": "om_root", "expect_edits": True},
+            )
+            self.assertTrue(fallback.success)
+            self.assertEqual(fallback.message_id, "om_card")
+
+            state.turn_terminal = True
+            final = await adapter.edit_message(
+                "oc_chat",
+                fallback.message_id,
+                "final fallback answer",
+                finalize=True,
+                metadata={"thread_id": "om_root"},
+            )
+
+            self.assertTrue(final.success)
+            self.assertEqual(final.message_id, "om_card")
+            self.assertTrue(state.closed)
+            self.assertNotIn(
+                ("oc_chat", "om_root"),
+                adapter._cardkit_states_by_route,
+            )
+
+        asyncio.run(scenario())
+
+        regular_sends = [
+            call[1]
+            for call in calls
+            if call[0] == "send"
+            and json.loads(call[1]["payload"]).get("type") != "card"
+        ]
+        self.assertEqual(len(regular_sends), 1)
+        self.assertEqual(regular_sends[0]["reply_to"], "om_steer")
+        self.assertIn(("regular_edit", "final fallback answer"), calls)
+
+    def test_question_suspends_stream_and_answer_resumes_below_question(
+        self,
+    ) -> None:
+        """An AskUserQuestion card is a boundary for subsequent streaming."""
+        adapter, calls = self._adapter()
+        adapter._openclaw_interaction_messages = {}
+        adapter._openclaw_submitted_lock = threading.Lock()
+        card_number = 0
+
+        async def create(card: dict[str, Any]) -> Any:
+            nonlocal card_number
+            card_number += 1
+            calls.append(("create", card))
+            return SimpleNamespace(
+                success=lambda: True,
+                data=SimpleNamespace(card_id=f"card-{card_number}"),
+            )
+
+        async def send_with_retry(**kwargs: Any) -> Any:
+            calls.append(("send", kwargs))
+            payload = json.loads(kwargs["payload"])
+            message_id = (
+                "om_question"
+                if payload.get("schema") == "2.0"
+                else f"om_card_{card_number}"
+            )
+            return SimpleNamespace(
+                success=lambda: True,
+                data=SimpleNamespace(message_id=message_id),
+            )
+
+        adapter._cardkit_create = create
+        adapter._feishu_send_with_retry = send_with_retry
+        interaction = SimpleNamespace(
+            token="question-1",
+            request={
+                "questions": [
+                    {
+                        "question": "Which path?",
+                        "header": "Path",
+                        "options": [
+                            {"label": "Device", "description": "Use a device"}
+                        ],
+                        "multiSelect": False,
+                    }
+                ]
+            },
+            ticket=SimpleNamespace(
+                chat_id="oc_chat",
+                message_id="om_root",
+                thread_id="om_root",
+                session_thread_id="om_root",
+            ),
+        )
+        resumed_event = self._event()
+        resumed_event.message_id = "om_root:ask-user-answer:question-1"
+
+        async def scenario() -> None:
+            state = await adapter._start_cardkit_turn(self._event())
+            await adapter._stream_cardkit_content(state, "investigation so far")
+            await asyncio.sleep(0.01)
+
+            delivered = await adapter._send_openclaw_interaction_card(interaction)
+
+            self.assertTrue(delivered)
+            self.assertFalse(state.segment_open)
+            self.assertEqual(state.resume_anchor_message_id, "om_question")
+
+            resumed = await adapter._start_cardkit_turn(resumed_event)
+
+            self.assertIs(resumed, state)
+            self.assertTrue(state.segment_open)
+            self.assertEqual(state.message_id, "om_card_2")
+
+        asyncio.run(scenario())
+
+        waiting_cards = [
+            call[1]
+            for call in calls
+            if call[0] == "update"
+            and "Waiting for your answer" in json.dumps(
+                call[1], ensure_ascii=False
+            )
+        ]
+        self.assertEqual(len(waiting_cards), 1)
+        self.assertFalse(waiting_cards[0]["config"]["streaming_mode"])
+        card_sends = [
+            call[1]
+            for call in calls
+            if call[0] == "send"
+            and json.loads(call[1]["payload"]).get("type") == "card"
+        ]
+        self.assertEqual(
+            [call["reply_to"] for call in card_sends],
+            ["om_root", "om_question"],
+        )
+
+    def test_question_send_failure_closes_the_active_segment_as_error(
+        self,
+    ) -> None:
+        """A missing Question card cannot leave the response generating."""
+        adapter, calls = self._adapter()
+        adapter._openclaw_interaction_messages = {}
+        adapter._openclaw_submitted_lock = threading.Lock()
+
+        async def send_with_retry(**kwargs: Any) -> Any:
+            calls.append(("send", kwargs))
+            payload = json.loads(kwargs["payload"])
+            if payload.get("schema") == "2.0":
+                return SimpleNamespace(
+                    success=lambda: False,
+                    code=500,
+                    msg="question failed",
+                )
+            return SimpleNamespace(
+                success=lambda: True,
+                data=SimpleNamespace(message_id="om_card"),
+            )
+
+        adapter._feishu_send_with_retry = send_with_retry
+        interaction = SimpleNamespace(
+            token="question-1",
+            request={
+                "questions": [
+                    {
+                        "question": "Which path?",
+                        "header": "Path",
+                        "options": [],
+                        "multiSelect": False,
+                    }
+                ]
+            },
+            ticket=SimpleNamespace(
+                chat_id="oc_chat",
+                message_id="om_root",
+                thread_id="om_root",
+                session_thread_id="om_root",
+            ),
+        )
+
+        async def scenario() -> None:
+            state = await adapter._start_cardkit_turn(self._event())
+
+            delivered = await adapter._send_openclaw_interaction_card(interaction)
+
+            self.assertFalse(delivered)
+            self.assertTrue(state.closed)
+            self.assertEqual(state.phase, "error")
+
+        asyncio.run(scenario())
+
+        terminal_card = [call[1] for call in calls if call[0] == "update"][-1]
+        self.assertIn("Error", json.dumps(terminal_card, ensure_ascii=False))
+        self.assertIn(
+            "Unable to send the question card",
+            json.dumps(terminal_card, ensure_ascii=False),
+        )
+
+    def test_question_response_without_message_id_closes_the_active_segment(
+        self,
+    ) -> None:
+        """An untrackable Question card cannot leave an active stream."""
+        adapter, calls = self._adapter()
+        adapter._openclaw_interaction_messages = {}
+        adapter._openclaw_submitted_lock = threading.Lock()
+
+        async def send_with_retry(**kwargs: Any) -> Any:
+            calls.append(("send", kwargs))
+            payload = json.loads(kwargs["payload"])
+            if payload.get("type") == "card":
+                return SimpleNamespace(
+                    success=lambda: True,
+                    data=SimpleNamespace(message_id="om_card"),
+                )
+            return SimpleNamespace(
+                success=lambda: True,
+                data=SimpleNamespace(),
+            )
+
+        adapter._feishu_send_with_retry = send_with_retry
+        interaction = SimpleNamespace(
+            token="question-1",
+            request={
+                "questions": [
+                    {
+                        "question": "Which path?",
+                        "header": "Path",
+                        "options": [],
+                        "multiSelect": False,
+                    }
+                ]
+            },
+            ticket=SimpleNamespace(
+                chat_id="oc_chat",
+                message_id="om_root",
+                thread_id="om_root",
+                session_thread_id="om_root",
+            ),
+        )
+
+        async def scenario() -> None:
+            state = await adapter._start_cardkit_turn(self._event())
+
+            delivered = await adapter._send_openclaw_interaction_card(
+                interaction
+            )
+
+            self.assertFalse(delivered)
+            self.assertTrue(state.closed)
+            self.assertEqual(state.phase, "error")
+
+        asyncio.run(scenario())
+
+        terminal_card = [call[1] for call in calls if call[0] == "update"][-1]
+        self.assertIn("Error", json.dumps(terminal_card, ensure_ascii=False))
+
+    def test_question_answer_redirect_continues_below_the_question_card(
+        self,
+    ) -> None:
+        """A synthetic busy redirect uses the visible interaction as anchor."""
+        adapter, calls = self._adapter()
+        adapter._openclaw_interaction_messages = {}
+        adapter._openclaw_submitted_lock = threading.Lock()
+        card_number = 0
+
+        async def create(card: dict[str, Any]) -> Any:
+            nonlocal card_number
+            card_number += 1
+            calls.append(("create", card))
+            return SimpleNamespace(
+                success=lambda: True,
+                data=SimpleNamespace(card_id=f"card-{card_number}"),
+            )
+
+        async def send_with_retry(**kwargs: Any) -> Any:
+            calls.append(("send", kwargs))
+            payload = json.loads(kwargs["payload"])
+            message_id = (
+                "om_question"
+                if payload.get("schema") == "2.0"
+                else f"om_card_{card_number}"
+            )
+            return SimpleNamespace(
+                success=lambda: True,
+                data=SimpleNamespace(message_id=message_id),
+            )
+
+        adapter._cardkit_create = create
+        adapter._feishu_send_with_retry = send_with_retry
+        interaction = SimpleNamespace(
+            token="question-1",
+            request={
+                "questions": [
+                    {
+                        "question": "Which path?",
+                        "header": "Path",
+                        "options": [],
+                        "multiSelect": False,
+                    }
+                ]
+            },
+            ticket=SimpleNamespace(
+                chat_id="oc_chat",
+                message_id="om_root",
+                thread_id="om_root",
+                session_thread_id="om_root",
+            ),
+        )
+
+        async def scenario() -> None:
+            state = await adapter._start_cardkit_turn(self._event())
+            await adapter._send_openclaw_interaction_card(interaction)
+
+            redirected = await adapter.send(
+                "oc_chat",
+                "↪ Redirected current run. I'll use your answer.",
+                reply_to="om_root:ask-user-answer:question-1",
+                metadata={"thread_id": "om_root"},
+            )
+
+            self.assertTrue(redirected.success)
+            self.assertTrue(state.segment_open)
+            self.assertEqual(state.message_id, "om_card_2")
+            self.assertEqual(
+                state.active_input_message_id,
+                "om_root:ask-user-answer:question-1",
+            )
+
+        asyncio.run(scenario())
+
+        card_sends = [
+            call[1]
+            for call in calls
+            if call[0] == "send"
+            and json.loads(call[1]["payload"]).get("type") == "card"
+        ]
+        self.assertEqual(
+            [call["reply_to"] for call in card_sends],
+            ["om_root", "om_question"],
+        )
+
+    def test_question_answer_after_steer_reuses_the_latest_segment(self) -> None:
+        """A synthetic answer cannot move output above a newer user message."""
+        adapter, calls = self._adapter()
+        adapter._openclaw_interaction_messages = {}
+        adapter._openclaw_submitted_lock = threading.Lock()
+        card_number = 0
+
+        async def create(card: dict[str, Any]) -> Any:
+            nonlocal card_number
+            card_number += 1
+            calls.append(("create", card))
+            return SimpleNamespace(
+                success=lambda: True,
+                data=SimpleNamespace(card_id=f"card-{card_number}"),
+            )
+
+        async def send_with_retry(**kwargs: Any) -> Any:
+            calls.append(("send", kwargs))
+            payload = json.loads(kwargs["payload"])
+            message_id = (
+                "om_question"
+                if payload.get("schema") == "2.0"
+                else f"om_card_{card_number}"
+            )
+            return SimpleNamespace(
+                success=lambda: True,
+                data=SimpleNamespace(message_id=message_id),
+            )
+
+        adapter._cardkit_create = create
+        adapter._feishu_send_with_retry = send_with_retry
+        interaction = SimpleNamespace(
+            token="question-1",
+            request={
+                "questions": [
+                    {
+                        "question": "Which path?",
+                        "header": "Path",
+                        "options": [],
+                        "multiSelect": False,
+                    }
+                ]
+            },
+            ticket=SimpleNamespace(
+                chat_id="oc_chat",
+                message_id="om_root",
+                thread_id="om_root",
+                session_thread_id="om_root",
+            ),
+        )
+
+        async def scenario() -> None:
+            state = await adapter._start_cardkit_turn(self._event())
+            await adapter._send_openclaw_interaction_card(interaction)
+            await adapter.send(
+                "oc_chat",
+                "↪ Steered into current run.",
+                reply_to="om_steer",
+                metadata={"thread_id": "om_root"},
+            )
+
+            redirected = await adapter.send(
+                "oc_chat",
+                "↪ Redirected current run. I'll use your answer.",
+                reply_to="om_root:ask-user-answer:question-1",
+                metadata={"thread_id": "om_root"},
+            )
+
+            self.assertTrue(redirected.success)
+            self.assertEqual(state.message_id, "om_card_2")
+            self.assertEqual(
+                state.active_input_message_id,
+                "om_root:ask-user-answer:question-1",
+            )
+
+        asyncio.run(scenario())
+
+        card_sends = [
+            call[1]
+            for call in calls
+            if call[0] == "send"
+            and json.loads(call[1]["payload"]).get("type") == "card"
+        ]
+        self.assertEqual(
+            [call["reply_to"] for call in card_sends],
+            ["om_root", "om_steer"],
+        )
+
+    def test_question_wait_survives_the_originating_dispatch_completion(self) -> None:
+        """The pending question owns the route after its original turn returns."""
+        adapter, calls = self._adapter()
+        adapter._openclaw_interaction_messages = {}
+        adapter._openclaw_submitted_lock = threading.Lock()
+        adapter._reactions_enabled = lambda: False
+        interaction = SimpleNamespace(
+            token="question-1",
+            request={
+                "questions": [
+                    {
+                        "question": "Which path?",
+                        "header": "Path",
+                        "options": [],
+                        "multiSelect": False,
+                    }
+                ]
+            },
+            ticket=SimpleNamespace(
+                chat_id="oc_chat",
+                message_id="om_root",
+                thread_id="om_root",
+                session_thread_id="om_root",
+            ),
+        )
+
+        async def scenario() -> None:
+            state = await adapter._start_cardkit_turn(self._event())
+            delivered = await adapter._send_openclaw_interaction_card(interaction)
+            self.assertTrue(delivered)
+            update_count = len([call for call in calls if call[0] == "update"])
+
+            state.turn_terminal = True
+            hidden_final = await adapter.edit_message(
+                "oc_chat",
+                "om_card",
+                "Question card sent.",
+                finalize=True,
+                metadata={"thread_id": "om_root"},
+            )
+            await adapter.on_processing_complete(
+                self._event(),
+                self.adapter_module.ProcessingOutcome.SUCCESS,
+            )
+
+            self.assertTrue(hidden_final.success)
+            self.assertFalse(state.segment_open)
+            self.assertIs(
+                adapter._cardkit_states_by_route[("oc_chat", "om_root")],
+                state,
+            )
+            self.assertEqual(
+                len([call for call in calls if call[0] == "update"]),
+                update_count,
+            )
+
+        asyncio.run(scenario())
+
+    def test_expired_question_releases_its_suspended_cardkit_route(self) -> None:
+        """An expired interaction cannot retain a dead logical turn forever."""
+        adapter, _calls = self._adapter()
+        adapter._openclaw_interaction_messages = {
+            "question-1": "om_question",
+        }
+        adapter._openclaw_submitted_tokens = {"question-1"}
+        adapter._openclaw_submitted_lock = threading.Lock()
+
+        async def update_question(
+            _question_id: str,
+            _card: dict[str, Any],
+        ) -> bool:
+            return True
+
+        adapter._update_openclaw_question_card = update_question
+        ticket = SimpleNamespace(
+            chat_id="oc_chat",
+            message_id="om_root",
+            thread_id="om_root",
+            session_thread_id="om_root",
+        )
+
+        async def scenario() -> None:
+            state = await adapter._start_cardkit_turn(self._event())
+            await adapter._suspend_cardkit_segment(
+                state,
+                reason="question",
+                resume_anchor_message_id="om_question",
+            )
+
+            expired = await adapter._expire_openclaw_question_card(
+                "question-1",
+                [{"question": "Continue?", "header": "Confirm"}],
+                ticket=ticket,
+            )
+
+            self.assertTrue(expired)
+            self.assertTrue(state.closed)
+            self.assertNotIn(
+                ("oc_chat", "om_root"),
+                adapter._cardkit_states_by_route,
+            )
+            self.assertNotIn("om_card", adapter._cardkit_states_by_message)
+
+        asyncio.run(scenario())
+
+    def test_approval_resumes_streaming_below_the_resolved_card(self) -> None:
+        """Blocking approval output lazily opens a continuation segment."""
+        adapter, calls = self._adapter()
+        adapter._approval_counter = itertools.count(1)
+        adapter._approval_state = {}
+        adapter._interactive_operator_for_send = lambda *_args, **_kwargs: "ou_user"
+        adapter._format_exec_approval = (
+            lambda command, description, _smart_denied: (
+                f"```plain_text\n{command}\n```\n{description}"
+            )
+        )
+        adapter._finalize_send_result = lambda response, _error: (
+            self.adapter_module.SendResult(
+                success=True,
+                message_id=response.data.message_id,
+            )
+        )
+        card_number = 0
+
+        async def create(card: dict[str, Any]) -> Any:
+            nonlocal card_number
+            card_number += 1
+            calls.append(("create", card))
+            return SimpleNamespace(
+                success=lambda: True,
+                data=SimpleNamespace(card_id=f"card-{card_number}"),
+            )
+
+        async def send_with_retry(**kwargs: Any) -> Any:
+            calls.append(("send", kwargs))
+            payload = json.loads(kwargs["payload"])
+            message_id = (
+                "om_approval"
+                if "header" in payload
+                else f"om_card_{card_number}"
+            )
+            return SimpleNamespace(
+                success=lambda: True,
+                data=SimpleNamespace(message_id=message_id),
+            )
+
+        adapter._cardkit_create = create
+        adapter._feishu_send_with_retry = send_with_retry
+        ticket = self.tools.ToolTicket(
+            session_id="session-1",
+            message_id="om_root",
+            chat_id="oc_chat",
+            account_id="default",
+            profile_scope="profile",
+            chat_type="p2p",
+            session_thread_id="om_root",
+        )
+
+        async def scenario() -> None:
+            state = await adapter._start_cardkit_turn(self._event())
+            state.session_id = "session-1"
+            state.turn_id = "turn-1"
+            await adapter._update_cardkit_tool_for_ticket(
+                ticket,
+                tool_name="terminal",
+                tool_call_id="call-1",
+                status="running",
+                session_id="session-1",
+                turn_id="turn-1",
+            )
+
+            approval = await adapter.send_exec_approval(
+                "oc_chat",
+                "rm -rf /tmp/example",
+                "session-1",
+                metadata={"thread_id": "om_root"},
+            )
+
+            self.assertTrue(approval.success)
+            self.assertFalse(state.segment_open)
+            self.assertEqual(state.suspension_reason, "approval")
+            self.assertEqual(state.resume_anchor_message_id, "om_approval")
+
+            updated = await adapter._update_cardkit_tool_for_ticket(
+                ticket,
+                tool_name="terminal",
+                tool_call_id="call-1",
+                status="ok",
+                session_id="session-1",
+                turn_id="turn-1",
+            )
+
+            self.assertTrue(updated)
+            self.assertTrue(state.segment_open)
+            self.assertEqual(state.message_id, "om_card_2")
+
+        asyncio.run(scenario())
+
+        waiting_cards = [
+            call[1]
+            for call in calls
+            if call[0] == "update"
+            and "Waiting for your approval" in json.dumps(
+                call[1], ensure_ascii=False
+            )
+        ]
+        self.assertEqual(len(waiting_cards), 1)
+        self.assertFalse(waiting_cards[0]["config"]["streaming_mode"])
+        card_sends = [
+            call[1]
+            for call in calls
+            if call[0] == "send"
+            and json.loads(call[1]["payload"]).get("type") == "card"
+        ]
+        self.assertEqual(
+            [call["reply_to"] for call in card_sends],
+            ["om_root", "om_approval"],
+        )
+
+    def test_artifact_boundary_resumes_streaming_below_the_attachment(self) -> None:
+        """A native attachment becomes the anchor for later assistant text."""
+        adapter, calls = self._adapter()
+        card_number = 0
+
+        async def create(card: dict[str, Any]) -> Any:
+            nonlocal card_number
+            card_number += 1
+            calls.append(("create", card))
+            return SimpleNamespace(
+                success=lambda: True,
+                data=SimpleNamespace(card_id=f"card-{card_number}"),
+            )
+
+        async def send_with_retry(**kwargs: Any) -> Any:
+            calls.append(("send", kwargs))
+            return SimpleNamespace(
+                success=lambda: True,
+                data=SimpleNamespace(message_id=f"om_card_{card_number}"),
+            )
+
+        adapter._cardkit_create = create
+        adapter._feishu_send_with_retry = send_with_retry
+
+        async def scenario() -> None:
+            state = await adapter._start_cardkit_turn(self._event())
+
+            artifact = await adapter._finish_artifact_send(
+                self.adapter_module.SendResult(
+                    success=True,
+                    message_id="om_report",
+                ),
+                chat_id="oc_chat",
+                reply_to="om_root",
+                metadata={"thread_id": "om_root"},
+            )
+            streamed = await adapter._stream_cardkit_content(
+                state,
+                "The report is ready.",
+            )
+
+            self.assertTrue(artifact.success)
+            self.assertTrue(streamed.success)
+            self.assertTrue(state.segment_open)
+            self.assertEqual(state.message_id, "om_card_2")
+
+        asyncio.run(scenario())
+
+        card_sends = [
+            call[1]
+            for call in calls
+            if call[0] == "send"
+            and json.loads(call[1]["payload"]).get("type") == "card"
+        ]
+        self.assertEqual(
+            [call["reply_to"] for call in card_sends],
+            ["om_root", "om_report"],
+        )
+        continued = [
+            call[1]
+            for call in calls
+            if call[0] == "update"
+            and "Continued below" in json.dumps(call[1], ensure_ascii=False)
+        ]
+        self.assertEqual(len(continued), 1)
 
     def test_direct_plugin_commands_skip_cardkit_without_disabling_skill_commands(
         self,
@@ -471,6 +1497,69 @@ class CardKitAdapterTests(unittest.TestCase):
         self.assertIn("Final answer", terminal_json)
         self.assertNotIn("Checking GitHub authentication.", terminal_json)
         self.assertNotIn("⏳ Working", terminal_json)
+
+    def test_steer_ack_and_compaction_status_stay_in_the_active_segment(self) -> None:
+        """Known runtime status text does not create loose thread messages."""
+        adapter, calls = self._adapter()
+        card_number = 0
+
+        async def create(card: dict[str, Any]) -> Any:
+            nonlocal card_number
+            card_number += 1
+            calls.append(("create", card))
+            return SimpleNamespace(
+                success=lambda: True,
+                data=SimpleNamespace(card_id=f"card-{card_number}"),
+            )
+
+        async def send_with_retry(**kwargs: Any) -> Any:
+            calls.append(("send", kwargs))
+            return SimpleNamespace(
+                success=lambda: True,
+                data=SimpleNamespace(message_id=f"om_card_{card_number}"),
+            )
+
+        adapter._cardkit_create = create
+        adapter._feishu_send_with_retry = send_with_retry
+
+        async def scenario() -> None:
+            state = await adapter._start_cardkit_turn(self._event())
+            steer_ack = await adapter.send(
+                "oc_chat",
+                "⏩ Steered into current run (iteration 2/10).",
+                reply_to="om_steer",
+                metadata={"thread_id": "om_root"},
+            )
+            compaction = await adapter.send(
+                "oc_chat",
+                "🗜️ Compacting context — summarizing earlier conversation...",
+                metadata={"thread_id": "om_root"},
+            )
+
+            self.assertTrue(steer_ack.success)
+            self.assertTrue(compaction.success)
+            self.assertEqual(state.message_id, "om_card_2")
+            self.assertEqual(state.active_input_message_id, "om_steer")
+            self.assertEqual(
+                state.progress_content,
+                "⏩ Steered into current run (iteration 2/10).",
+            )
+            self.assertEqual(
+                state.heartbeat_content,
+                "🗜️ Compacting context — summarizing earlier conversation...",
+            )
+
+        asyncio.run(scenario())
+
+        self.assertEqual(len([call for call in calls if call[0] == "send"]), 2)
+        self.assertEqual(
+            [
+                call[1]["reply_to"]
+                for call in calls
+                if call[0] == "send"
+            ],
+            ["om_root", "om_steer"],
+        )
 
     def test_progress_only_silent_reply_finishes_as_done(self) -> None:
         adapter, calls = self._adapter()

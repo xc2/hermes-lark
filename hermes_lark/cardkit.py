@@ -251,7 +251,7 @@ class CardKitToolStatus:
 
 @dataclass
 class CardKitConversationState:
-    """Mutable state and write serialization for one conversational card."""
+    """Mutable CardKit state for one logical turn and its active segment."""
 
     chat_id: str
     thread_id: str
@@ -262,6 +262,11 @@ class CardKitConversationState:
     heartbeat_content: str = ""
     last_flushed_content: str = ""
     tools: dict[str, Any] = field(default_factory=dict)
+    segment_open: bool = True
+    active_input_message_id: str = ""
+    resume_anchor_message_id: str = ""
+    suspension_reason: str = ""
+    fallback_message_id: str = ""
     closed: bool = False
     unavailable: bool = False
     streaming_disabled: bool = False
@@ -632,7 +637,7 @@ def _build_lifecycle_card(
         for value in (progress_content, heartbeat_content)
         if value.strip()
     ]
-    if streaming and progress_parts:
+    if progress_parts:
         elements.append(
             {
                 "tag": "markdown",
@@ -724,6 +729,74 @@ def build_complete_card(
         content=content,
         streaming=False,
         tools=tools,
+    )
+
+
+def build_continued_card(
+    content: str,
+    *,
+    tools: Optional[Mapping[str, Any]] = None,
+    progress_content: str = "",
+) -> dict[str, Any]:
+    """Build a frozen segment whose logical turn continues below."""
+    return _build_lifecycle_card(
+        lifecycle_content="↪️ **Continued below**",
+        lifecycle_content_zh="↪️ **Continued below**",
+        summary="Continued below",
+        summary_zh="Continued below",
+        content=content,
+        streaming=False,
+        tools=tools,
+        progress_content=progress_content,
+    )
+
+
+def build_waiting_card(
+    content: str,
+    *,
+    reason: str,
+    tools: Optional[Mapping[str, Any]] = None,
+    progress_content: str = "",
+) -> dict[str, Any]:
+    """Build a frozen segment waiting for an interaction below."""
+    labels = {
+        "question": (
+            "⏸️ **Waiting for your answer below**",
+            "⏸️ **Waiting for your answer below**",
+            "Waiting for your answer",
+            "Waiting for your answer",
+        ),
+        "approval": (
+            "⏸️ **Waiting for your approval below**",
+            "⏸️ **Waiting for your approval below**",
+            "Waiting for approval",
+            "Waiting for approval",
+        ),
+        "authorization": (
+            "⏸️ **Authorization required below**",
+            "⏸️ **Authorization required below**",
+            "Authorization required",
+            "Authorization required",
+        ),
+    }
+    label, label_zh, summary, summary_zh = labels.get(
+        reason,
+        (
+            "⏸️ **Action required below**",
+            "⏸️ **Action required below**",
+            "Action required",
+            "Action required",
+        ),
+    )
+    return _build_lifecycle_card(
+        lifecycle_content=label,
+        lifecycle_content_zh=label_zh,
+        summary=summary,
+        summary_zh=summary_zh,
+        content=content,
+        streaming=False,
+        tools=tools,
+        progress_content=progress_content,
     )
 
 

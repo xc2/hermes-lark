@@ -329,6 +329,44 @@ class CardKitStreamingTests(unittest.IsolatedAsyncioTestCase):
             )
         )
 
+    def test_segment_boundaries_are_static_and_preserve_visible_progress(self) -> None:
+        """Steer and question boundaries freeze the activity shown above them."""
+        continued = self.module.build_continued_card(
+            "partial answer",
+            progress_content="Checked the source.",
+        )
+        waiting = self.module.build_waiting_card(
+            "partial answer",
+            reason="question",
+            progress_content="Checked the source.",
+        )
+
+        for card in (continued, waiting):
+            with self.subTest(summary=card["config"]["summary"]["content"]):
+                self.assertFalse(card["config"]["streaming_mode"])
+                self.assertFalse(
+                    any(
+                        element.get("element_id") == "loading_icon"
+                        for element in card["body"]["elements"]
+                    )
+                )
+                self.assertEqual(
+                    next(
+                        element["content"]
+                        for element in card["body"]["elements"]
+                        if element.get("element_id") == "progress_content"
+                    ),
+                    "Checked the source.",
+                )
+        self.assertIn(
+                "Continued below",
+            continued["body"]["elements"][0]["i18n_content"]["zh_cn"],
+        )
+        self.assertIn(
+                "Waiting for your answer",
+            waiting["body"]["elements"][0]["i18n_content"]["zh_cn"],
+        )
+
     async def test_trace_is_structured_and_only_written_for_explicit_path(self) -> None:
         """E2E diagnostics append one API-result JSON object only when enabled."""
         state = self.module.CardKitConversationState(
