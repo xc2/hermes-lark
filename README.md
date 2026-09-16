@@ -197,30 +197,20 @@ replyMode:
   default: auto
 ```
 
-With `replyMode: auto`, DMs use CardKit and groups use static replies. An
-uninterrupted agent turn uses one CardKit entity and one thread message. An
-accepted mid-turn steer, blocking Question/Approval/authorization card, or
-native artifact freezes the physical card above that timeline boundary and
-continues the same logical turn in a new CardKit segment below it. A steer is
-committed when Hermes emits its Steered/Redirected acknowledgement. When that
-acknowledgement is suppressed or debounced, the adapter uses the successful
-Steer busy dispatch and verifies that Hermes did not queue the event. A
-blocking interaction or artifact is committed only after its Feishu message
-is visible. Only the latest segment accepts subsequent commentary, tool
-status, streamed content, and finalization. Each active card moves through
-Thinking, Generating, tool-running/tool-complete, and terminal success/error
-states while its response body is updated cumulatively.
-Successful cards omit the fixed completion banner and leave the summary empty
-so Feishu can derive the chat-list preview from the card.
+With `replyMode: auto`, DMs use CardKit and groups use static replies. During a
+CardKit turn:
 
-While the turn is active, Hermes interim assistant messages and the latest
-default `⏳ Working` notification appear in the Generating body instead of
-creating separate Feishu messages. The final answer replaces that progress
-narration when the turn succeeds. Hermes' redirect acknowledgement and context
-compaction status also remain in the active segment instead of becoming loose
-thread messages. If a continuation CardKit entity cannot be created, the
-already-frozen card stays frozen and the continuation falls back to an ordinary
-message below the boundary.
+- Progress and tool status update the latest card; the final answer replaces
+  that progress.
+- An accepted Steer, blocking interaction, or native artifact freezes the
+  current card and continues below the timeline boundary.
+- If a continuation card cannot be created, output falls back to an ordinary
+  message below the boundary.
+
+See [`docs/CONFIGURATION.md`](https://github.com/xc2/hermes-lark/blob/main/docs/CONFIGURATION.md)
+for runtime details and
+[`docs/research/agent-conversation-interruption-designs.md`](https://github.com/xc2/hermes-lark/blob/main/docs/research/agent-conversation-interruption-designs.md)
+for the complete interaction matrix.
 
 Dangerous Hermes commands use a separate card in the same thread with Allow
 Once, Session, Always, and Deny actions. To avoid duplicate progress UI, disable
