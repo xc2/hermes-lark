@@ -17,6 +17,12 @@ and the project intends to follow [Semantic Versioning](https://semver.org/).
 - Run every `feishu_doc_comments` action with the requesting user's access
   token, including both reply payload variants, as promised by its tool
   description.
+- Hydrate a new Hermes session from every preceding message and downloadable
+  resource in an existing Feishu thread, and fail visibly when the snapshot is
+  incomplete.
+- Preserve physical thread ordering after an accepted Steer or a blocking
+  interaction by freezing the prior CardKit segment and continuing below the
+  timeline boundary.
 
 ## [1.0.0] - 2026-08-04
 
