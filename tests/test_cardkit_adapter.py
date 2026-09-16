@@ -671,6 +671,103 @@ class CardKitAdapterTests(unittest.TestCase):
         self.assertEqual(regular_sends[0]["reply_to"], "om_steer")
         self.assertIn(("regular_edit", "final fallback answer"), calls)
 
+    def test_repeated_failed_steers_create_fallbacks_at_each_boundary(
+        self,
+    ) -> None:
+        """Each failed Steer continuation falls back below its own input."""
+        adapter, calls = self._adapter()
+        create_count = 0
+        regular_sends: list[tuple[str, str | None]] = []
+        regular_edits: list[tuple[str, str]] = []
+
+        async def create(card: dict[str, Any]) -> Any:
+            nonlocal create_count
+            create_count += 1
+            calls.append(("create", card))
+            return SimpleNamespace(
+                success=lambda: create_count == 1,
+                data=SimpleNamespace(card_id="card-1"),
+                code=500,
+                msg="create failed",
+            )
+
+        async def send_with_retry(**kwargs: Any) -> Any:
+            payload = json.loads(kwargs["payload"])
+            if payload.get("type") == "card":
+                message_id = "om_card"
+            else:
+                message_id = f"om_fallback_{len(regular_sends) + 1}"
+                regular_sends.append((message_id, kwargs["reply_to"]))
+            return SimpleNamespace(
+                success=lambda: True,
+                data=SimpleNamespace(message_id=message_id),
+            )
+
+        adapter._cardkit_create = create
+        adapter._feishu_send_with_retry = send_with_retry
+        original_edit_message = adapter.edit_message
+
+        async def edit_message(
+            chat_id: str,
+            message_id: str,
+            content: str,
+            **kwargs: Any,
+        ) -> Any:
+            if message_id.startswith("om_fallback_"):
+                regular_edits.append((message_id, content))
+                return self.adapter_module.SendResult(
+                    success=True,
+                    message_id=message_id,
+                )
+            return await original_edit_message(
+                chat_id,
+                message_id,
+                content,
+                **kwargs,
+            )
+
+        adapter.edit_message = edit_message
+
+        async def scenario() -> None:
+            await adapter._start_cardkit_turn(self._event())
+            for number in (1, 2):
+                steer_message_id = f"om_steer_{number}"
+                await adapter.send(
+                    "oc_chat",
+                    (
+                        "⏩ Steered into current run. Your message arrives "
+                        "after the next tool call."
+                    ),
+                    reply_to=steer_message_id,
+                    metadata={"thread_id": "om_root"},
+                )
+                await adapter.send(
+                    "oc_chat",
+                    f"answer after steer {number}",
+                    reply_to=steer_message_id,
+                    metadata={
+                        "thread_id": "om_root",
+                        "expect_edits": True,
+                    },
+                )
+
+        asyncio.run(scenario())
+
+        self.assertEqual(
+            regular_sends,
+            [
+                ("om_fallback_1", "om_steer_1"),
+                ("om_fallback_2", "om_steer_2"),
+            ],
+        )
+        self.assertEqual(
+            regular_edits,
+            [
+                ("om_fallback_1", "answer after steer 1"),
+                ("om_fallback_2", "answer after steer 2"),
+            ],
+        )
+
     def test_question_suspends_stream_and_answer_resumes_below_question(
         self,
     ) -> None:
@@ -1344,6 +1441,86 @@ class CardKitAdapterTests(unittest.TestCase):
             and "Continued below" in json.dumps(call[1], ensure_ascii=False)
         ]
         self.assertEqual(len(continued), 1)
+
+    def test_artifact_boundary_resumes_before_terminal_send(self) -> None:
+        """A terminal text send continues below an earlier attachment."""
+        adapter, calls = self._adapter()
+        adapter._reactions_enabled = lambda: False
+        card_number = 0
+
+        async def create(card: dict[str, Any]) -> Any:
+            nonlocal card_number
+            card_number += 1
+            calls.append(("create", card))
+            return SimpleNamespace(
+                success=lambda: True,
+                data=SimpleNamespace(card_id=f"card-{card_number}"),
+            )
+
+        async def send_with_retry(**kwargs: Any) -> Any:
+            calls.append(("send", kwargs))
+            return SimpleNamespace(
+                success=lambda: True,
+                data=SimpleNamespace(
+                    message_id=f"om_card_{card_number}"
+                ),
+            )
+
+        adapter._cardkit_create = create
+        adapter._feishu_send_with_retry = send_with_retry
+
+        async def scenario() -> None:
+            origin = self._event()
+            state = await adapter._start_cardkit_turn(origin)
+            state.turn_terminal = True
+            artifact = await adapter._finish_artifact_send(
+                self.adapter_module.SendResult(
+                    success=True,
+                    message_id="om_voice",
+                ),
+                chat_id="oc_chat",
+                reply_to="om_root",
+                metadata={"thread_id": "om_root", "notify": True},
+            )
+            final = await adapter.send(
+                "oc_chat",
+                "complete written answer",
+                reply_to="om_root",
+                metadata={"thread_id": "om_root", "notify": True},
+            )
+            await adapter.on_processing_complete(
+                origin,
+                self.adapter_module.ProcessingOutcome.SUCCESS,
+            )
+
+            self.assertTrue(artifact.success)
+            self.assertTrue(final.success)
+            self.assertTrue(state.closed)
+            self.assertEqual(state.message_id, "om_card_2")
+            self.assertEqual(state.content, "complete written answer")
+
+        asyncio.run(scenario())
+
+        card_sends = [
+            call[1]
+            for call in calls
+            if call[0] == "send"
+            and json.loads(call[1]["payload"]).get("type") == "card"
+        ]
+        self.assertEqual(
+            [call["reply_to"] for call in card_sends],
+            ["om_root", "om_voice"],
+        )
+        terminal_cards = [
+            call[1]
+            for call in calls
+            if call[0] == "update"
+            and "complete written answer" in json.dumps(
+                call[1],
+                ensure_ascii=False,
+            )
+        ]
+        self.assertTrue(terminal_cards)
 
     def test_direct_plugin_commands_skip_cardkit_without_disabling_skill_commands(
         self,

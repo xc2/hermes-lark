@@ -3947,7 +3947,10 @@ class FeishuAdapter(BasePlatformAdapter):
         async with state.lock:
             if state.closed or state.unavailable:
                 return False
-            state.resume_anchor_message_id = str(resume_anchor_message_id or "")
+            next_resume_anchor = str(resume_anchor_message_id or "")
+            if state.resume_anchor_message_id != next_resume_anchor:
+                state.fallback_message_id = ""
+            state.resume_anchor_message_id = next_resume_anchor
             state.suspension_reason = reason
             if not getattr(state, "segment_open", True):
                 return True
@@ -4102,6 +4105,8 @@ class FeishuAdapter(BasePlatformAdapter):
                 resume_anchor_message_id=anchor_message_id,
             )
         else:
+            if state.resume_anchor_message_id != anchor_message_id:
+                state.fallback_message_id = ""
             state.resume_anchor_message_id = anchor_message_id
             state.suspension_reason = "steer"
         continuation = await self._create_cardkit_segment(
@@ -5176,6 +5181,7 @@ class FeishuAdapter(BasePlatformAdapter):
                 and not getattr(cardkit_state, "closed", False)
                 and not getattr(cardkit_state, "unavailable", False)
             ):
+                await self._resume_cardkit_segment_for_output(cardkit_state)
                 cardkit_result = await self._finalize_cardkit(
                     cardkit_state,
                     formatted,
