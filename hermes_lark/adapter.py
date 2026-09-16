@@ -3891,6 +3891,13 @@ class FeishuAdapter(BasePlatformAdapter):
                         resume_anchor=expected_resume_anchor,
                     )
                 ):
+                    await self._retire_stale_cardkit_segment(
+                        chat_id=chat_id,
+                        thread_id=thread_id,
+                        card_id=card_id,
+                        message_id=message_id,
+                        stopped=bool(existing_state.closed),
+                    )
                     return None
                 state.card_id = card_id
                 state.message_id = message_id
@@ -3963,6 +3970,40 @@ class FeishuAdapter(BasePlatformAdapter):
                 exc_info=True,
             )
             return None
+
+    async def _retire_stale_cardkit_segment(
+        self,
+        *,
+        chat_id: str,
+        thread_id: str,
+        card_id: str,
+        message_id: str,
+        stopped: bool,
+    ) -> None:
+        """Close a published segment that lost its logical boundary."""
+        from .cardkit import CardKitConversationState
+
+        stale_state = CardKitConversationState(
+            chat_id=self._raw_cardkit_chat_id(chat_id),
+            thread_id=thread_id,
+            card_id=card_id,
+            message_id=message_id,
+        )
+        if stopped:
+            result = await self._finalize_cardkit(
+                stale_state,
+                "Stopped.",
+                stopped=True,
+            )
+            if not result.success:
+                logger.warning("[Feishu] Failed to close a stale stopped card")
+            return
+        if not await self._suspend_cardkit_segment(
+            stale_state,
+            reason="steer",
+            resume_anchor_message_id="",
+        ):
+            logger.warning("[Feishu] Failed to close a stale continued card")
 
     async def _suspend_cardkit_segment(
         self,
@@ -4183,6 +4224,16 @@ class FeishuAdapter(BasePlatformAdapter):
             state=state,
         )
         async with state.lock:
+            deferred_tools = dict(
+                getattr(state, "deferred_tool_updates", {})
+            )
+            state.deferred_tool_updates = {}
+            if continuation is state and deferred_tools:
+                state.tools.update(deferred_tools)
+                state.full_update_pending = True
+                controller = getattr(state, "flush_controller", None)
+                if controller is not None and not state.streaming_disabled:
+                    controller.request()
             if (
                 continuation is None
                 and self._cardkit_boundary_is_current(
@@ -4904,7 +4955,11 @@ class FeishuAdapter(BasePlatformAdapter):
         turn_id: str = "",
     ) -> bool:
         """Render one Hermes tool lifecycle transition on its active card."""
-        from .cardkit import build_generating_card, should_buffer_silent_reply
+        from .cardkit import (
+            CardKitToolStatus,
+            build_generating_card,
+            should_buffer_silent_reply,
+        )
 
         thread_id = str(
             getattr(ticket, "session_thread_id", None)
@@ -4919,14 +4974,42 @@ class FeishuAdapter(BasePlatformAdapter):
             return False
         if turn_id and getattr(state, "turn_id", turn_id) != turn_id:
             return False
-        if not await self._resume_cardkit_segment_for_output(state):
-            return False
         normalized_status = {
             "ok": "success",
             "blocked": "error",
             "cancelled": "error",
         }.get(str(status or "").lower(), str(status or "running").lower())
         safe_detail = str(detail or "")[:160]
+        tool_id = str(tool_call_id or tool_name)
+        tool_label = str(tool_name or "tool")
+        resumed = await self._resume_cardkit_segment_for_output(state)
+        if not resumed:
+            async with state.lock:
+                current_route = (
+                    not state.closed
+                    and not state.unavailable
+                    and self._known_cardkit_state_for_route(
+                        state.chat_id,
+                        state.thread_id,
+                    )
+                    is state
+                )
+                if current_route and getattr(state, "segment_open", True):
+                    resumed = True
+                elif current_route and getattr(
+                    state,
+                    "segment_transitioning",
+                    False,
+                ):
+                    state.deferred_tool_updates[tool_id] = CardKitToolStatus(
+                        tool_call_id=tool_id,
+                        name=tool_label,
+                        status=normalized_status,
+                        detail=safe_detail,
+                    )
+                    return True
+        if not resumed:
+            return False
         async with state.lock:
             if (
                 state.closed
@@ -4936,8 +5019,8 @@ class FeishuAdapter(BasePlatformAdapter):
             ):
                 return False
             state.update_tool(
-                str(tool_call_id or tool_name),
-                name=str(tool_name or "tool"),
+                tool_id,
+                name=tool_label,
                 status=normalized_status,
                 detail=safe_detail,
             )

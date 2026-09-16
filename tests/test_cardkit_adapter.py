@@ -1606,7 +1606,7 @@ class CardKitAdapterTests(unittest.TestCase):
         boundary: str,
     ) -> None:
         """Hold one segment request across a later lifecycle boundary."""
-        adapter, _calls = self._adapter()
+        adapter, calls = self._adapter()
         adapter._reactions_enabled = lambda: False
         pending_request = asyncio.Event()
         release_request = asyncio.Event()
@@ -1636,6 +1636,16 @@ class CardKitAdapterTests(unittest.TestCase):
 
         adapter._cardkit_create = create
         adapter._feishu_send_with_retry = send_with_retry
+
+        async def update(
+            state: Any,
+            card: dict[str, Any],
+            sequence: int,
+        ) -> Any:
+            calls.append(("update", state.card_id, card, sequence))
+            return SimpleNamespace(success=lambda: True, data=SimpleNamespace())
+
+        adapter._cardkit_update = update
 
         async def scenario() -> None:
             event = self._event()
@@ -1693,6 +1703,124 @@ class CardKitAdapterTests(unittest.TestCase):
                     state.tools["artifact-tool"].status,
                     "success",
                 )
+
+            stale_updates = [
+                call[2]
+                for call in calls
+                if call[0] == "update" and call[1] == "card-2"
+            ]
+            if gate == "send":
+                self.assertTrue(stale_updates)
+                stale_card = json.dumps(stale_updates[-1], ensure_ascii=False)
+                self.assertIn(
+                    "Stopped." if boundary == "cancel" else "Continued below",
+                    stale_card,
+                )
+                self.assertNotIn("loading", stale_card)
+            else:
+                self.assertFalse(stale_updates)
+
+        asyncio.run(scenario())
+
+    def test_tool_completion_waits_for_inflight_steer_segment(self) -> None:
+        """A tool completion survives until a newer segment becomes visible."""
+        adapter, calls = self._adapter()
+        adapter._reactions_enabled = lambda: False
+        adapter._cardkit_stream_throttle_seconds = 0.0
+        old_send_pending = asyncio.Event()
+        release_old_send = asyncio.Event()
+        new_create_pending = asyncio.Event()
+        release_new_create = asyncio.Event()
+        created = 0
+
+        async def create(card: dict[str, Any]) -> Any:
+            nonlocal created
+            created += 1
+            card_number = created
+            if card_number == 3:
+                new_create_pending.set()
+                await release_new_create.wait()
+            return SimpleNamespace(
+                success=lambda: True,
+                data=SimpleNamespace(card_id=f"card-{card_number}"),
+            )
+
+        async def send_with_retry(**kwargs: Any) -> Any:
+            card_id = json.loads(kwargs["payload"])["data"]["card_id"]
+            if card_id == "card-2":
+                old_send_pending.set()
+                await release_old_send.wait()
+            return SimpleNamespace(
+                success=lambda: True,
+                data=SimpleNamespace(message_id=f"om_{card_id}"),
+            )
+
+        async def update(
+            state: Any,
+            card: dict[str, Any],
+            sequence: int,
+        ) -> Any:
+            calls.append(("update", state.card_id, card, sequence))
+            return SimpleNamespace(success=lambda: True, data=SimpleNamespace())
+
+        adapter._cardkit_create = create
+        adapter._feishu_send_with_retry = send_with_retry
+        adapter._cardkit_update = update
+
+        async def scenario() -> None:
+            event = self._event()
+            state = await adapter._start_cardkit_turn(event)
+            await adapter._suspend_cardkit_for_boundary(
+                chat_id="oc_chat",
+                thread_id="om_root",
+                message_id="om_artifact",
+                reason="artifact",
+            )
+            tool_update = asyncio.create_task(
+                adapter._update_cardkit_tool_for_ticket(
+                    SimpleNamespace(
+                        chat_id="oc_chat",
+                        session_thread_id="om_root",
+                    ),
+                    tool_name="send_message",
+                    tool_call_id="artifact-tool",
+                    status="success",
+                )
+            )
+            await old_send_pending.wait()
+            steer = asyncio.create_task(
+                adapter._continue_cardkit_after_steer(
+                    state,
+                    chat_id="oc_chat",
+                    thread_id="om_root",
+                    anchor_message_id="om_steer",
+                    active_input_message_id="om_steer",
+                    command_origin=False,
+                )
+            )
+            await new_create_pending.wait()
+
+            release_old_send.set()
+            self.assertTrue(await tool_update)
+            release_new_create.set()
+            self.assertIs(await steer, state)
+            await state.flush_controller.complete()
+
+            self.assertEqual(state.card_id, "card-3")
+            self.assertEqual(
+                state.tools["artifact-tool"].status,
+                "success",
+            )
+            latest_updates = [
+                call[2]
+                for call in calls
+                if call[0] == "update" and call[1] == "card-3"
+            ]
+            self.assertTrue(latest_updates)
+            self.assertIn(
+                "send_message",
+                json.dumps(latest_updates[-1], ensure_ascii=False),
+            )
 
         asyncio.run(scenario())
 

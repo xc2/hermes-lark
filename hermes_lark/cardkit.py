@@ -268,6 +268,9 @@ class CardKitConversationState:
     suspension_reason: str = ""
     fallback_message_id: str = ""
     segment_transitioning: bool = False
+    deferred_tool_updates: dict[str, CardKitToolStatus] = field(
+        default_factory=dict
+    )
     deferred_terminal: Optional[tuple[str, bool, bool]] = None
     closed: bool = False
     unavailable: bool = False
