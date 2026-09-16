@@ -4478,6 +4478,9 @@ class FeishuAdapter(BasePlatformAdapter):
         content: str,
     ) -> SendResult:
         """Stream cumulative answer text into an open conversational card."""
+        async with state.lock:
+            if state.closed or state.unavailable:
+                return SendResult(success=False, error="CardKit stream is closed")
         if getattr(state, "suspension_reason", "") == "fallback":
             return await self._write_cardkit_fallback(state, content)
         if not await self._resume_cardkit_segment_for_output(state):
@@ -4508,6 +4511,9 @@ class FeishuAdapter(BasePlatformAdapter):
         progress = str(content or "").strip()
         if not progress:
             return SendResult(success=True, message_id="")
+        async with state.lock:
+            if state.closed or state.unavailable:
+                return SendResult(success=True, message_id="")
         if getattr(state, "suspension_reason", "") == "fallback":
             return await self._write_cardkit_fallback(state, progress)
         if not await self._resume_cardkit_segment_for_output(state):
@@ -4573,6 +4579,14 @@ class FeishuAdapter(BasePlatformAdapter):
                     error,
                     stopped,
                 )
+                return SendResult(success=True, message_id=state.message_id)
+
+            if state.closed:
+                if state.unavailable:
+                    return SendResult(
+                        success=False,
+                        error="CardKit message is unavailable",
+                    )
                 return SendResult(success=True, message_id=state.message_id)
 
         if getattr(state, "suspension_reason", "") == "fallback":
@@ -5162,10 +5176,12 @@ class FeishuAdapter(BasePlatformAdapter):
                 and not getattr(cardkit_state, "closed", False)
                 and not getattr(cardkit_state, "unavailable", False)
             ):
-                cardkit_result = await self._stream_cardkit_content(
+                cardkit_result = await self._finalize_cardkit(
                     cardkit_state,
                     formatted,
                 )
+                if getattr(cardkit_state, "closed", False):
+                    self._forget_cardkit_turn(cardkit_state)
         if cardkit_result is not None:
             result = cardkit_result
             if result.success and bot_peer_turn is not None and mention_applied:
@@ -11168,6 +11184,7 @@ class FeishuAdapter(BasePlatformAdapter):
         if not children_by_parent.get(message_id):
             return fallback
 
+        forwarded_resources: List[tuple[str, FeishuNormalizedMessage]] = []
         sender_kinds: Dict[str, bool] = {}
         for item in items:
             sender = item.get("sender")
@@ -11240,6 +11257,8 @@ class FeishuAdapter(BasePlatformAdapter):
                         bot=self._bot_identity(),
                         complete=complete,
                     )
+                    if normalized.image_keys or normalized.media_refs:
+                        forwarded_resources.append((item_id, normalized))
                     child_content = normalized.text_content
                     if not child_content and isinstance(normalized.metadata, dict):
                         child_content = str(
@@ -11280,6 +11299,7 @@ class FeishuAdapter(BasePlatformAdapter):
                 **fallback.metadata,
                 "entry_count": len(items),
                 "api_expanded": True,
+                "forwarded_resources": forwarded_resources,
             },
         )
 
@@ -11348,6 +11368,25 @@ class FeishuAdapter(BasePlatformAdapter):
             if cached_path:
                 media_urls.append(cached_path)
                 media_types.append(media_type)
+
+        forwarded_resources = normalized.metadata.get("forwarded_resources", [])
+        if isinstance(forwarded_resources, list):
+            for resource in forwarded_resources:
+                if (
+                    not isinstance(resource, tuple)
+                    or len(resource) != 2
+                    or not isinstance(resource[1], FeishuNormalizedMessage)
+                ):
+                    continue
+                resource_message_id, resource_message = resource
+                forwarded_urls, forwarded_types = (
+                    await self._download_feishu_message_resources(
+                        message_id=str(resource_message_id or ""),
+                        normalized=resource_message,
+                    )
+                )
+                media_urls.extend(forwarded_urls)
+                media_types.extend(forwarded_types)
 
         return media_urls, media_types
 
@@ -11974,6 +12013,36 @@ class FeishuAdapter(BasePlatformAdapter):
             expected_resources = len(normalized.image_keys) + len(
                 normalized.media_refs
             )
+            forwarded_resources = normalized.metadata.get(
+                "forwarded_resources",
+                [],
+            )
+            if not isinstance(forwarded_resources, list):
+                logger.warning(
+                    "[Feishu] Thread message %s has invalid forwarded "
+                    "resource metadata",
+                    item_message_id,
+                )
+                return None
+            for forwarded_resource in forwarded_resources:
+                if (
+                    not isinstance(forwarded_resource, tuple)
+                    or len(forwarded_resource) != 2
+                    or not isinstance(
+                        forwarded_resource[1],
+                        FeishuNormalizedMessage,
+                    )
+                ):
+                    logger.warning(
+                        "[Feishu] Thread message %s has invalid forwarded "
+                        "resource metadata",
+                        item_message_id,
+                    )
+                    return None
+                forwarded_message = forwarded_resource[1]
+                expected_resources += len(forwarded_message.image_keys) + len(
+                    forwarded_message.media_refs
+                )
             if (
                 message_type
                 in {"image", "file", "audio", "video", "media", "sticker"}
@@ -12241,10 +12310,16 @@ class FeishuAdapter(BasePlatformAdapter):
         )
         resolved_chat_type = self._resolve_source_chat_type(
             chat_info=cached_chat_info,
-            event_chat_type="group",
+            event_chat_type=str(
+                getattr(message, "chat_type", "p2p") or "p2p"
+            ),
         )
-        candidate_chat_types = tuple(
-            dict.fromkeys((resolved_chat_type, "group", "forum"))
+        candidate_chat_types = (
+            ("dm",)
+            if resolved_chat_type == "dm"
+            else tuple(
+                dict.fromkeys((resolved_chat_type, "group", "forum"))
+            )
         )
 
         try:

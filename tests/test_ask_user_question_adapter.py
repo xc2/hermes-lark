@@ -61,6 +61,7 @@ def _install_hermes_stubs() -> None:
         success: bool
         message_id: str | None = None
         error: str | None = None
+        raw_response: Any = None
 
     @dataclass
     class MessageEvent:

@@ -657,6 +657,113 @@ class ThreadRoutingTests(unittest.TestCase):
                 else:
                     adapter._expand_merge_forward_message.assert_not_awaited()
 
+    def test_thread_snapshot_downloads_forwarded_resources(self) -> None:
+        adapter = object.__new__(self.adapter_module.FeishuAdapter)
+        adapter._client = SimpleNamespace(
+            im=SimpleNamespace(
+                v1=SimpleNamespace(message=SimpleNamespace(list=object()))
+            )
+        )
+        adapter._bot_open_id = "ou_self"
+        adapter._bot_user_id = ""
+        adapter._bot_name = "Hermes"
+        adapter._sender_name_cache = OrderedDict()
+        root = SimpleNamespace(
+            message_id="om_root",
+            thread_id="omt_native",
+            msg_type="merge_forward",
+            body=SimpleNamespace(content="{}"),
+            mentions=[],
+            sender=SimpleNamespace(id="ou_user", sender_type="user"),
+        )
+        adapter._fetch_message_item = AsyncMock(return_value=root)
+        adapter._run_blocking = AsyncMock(
+            return_value=SimpleNamespace(
+                success=lambda: True,
+                data=SimpleNamespace(
+                    items=[root, SimpleNamespace(message_id="om_current")],
+                    has_more=False,
+                ),
+            )
+        )
+        adapter._fetch_merge_forward_items = AsyncMock(
+            return_value=[
+                {
+                    "message_id": "om_root",
+                    "msg_type": "merge_forward",
+                    "body": {"content": "{}"},
+                },
+                {
+                    "message_id": "om_photo",
+                    "upper_message_id": "om_root",
+                    "msg_type": "image",
+                    "body": {
+                        "content": json.dumps(
+                            {"image_key": "img_photo"}
+                        )
+                    },
+                },
+                {
+                    "message_id": "om_file",
+                    "upper_message_id": "om_root",
+                    "msg_type": "file",
+                    "body": {
+                        "content": json.dumps(
+                            {
+                                "file_key": "file_pdf",
+                                "file_name": "report.pdf",
+                            }
+                        )
+                    },
+                },
+            ]
+        )
+        adapter._download_feishu_image = AsyncMock(
+            return_value=("/cache/photo.png", "image/png")
+        )
+        adapter._download_feishu_message_resource = AsyncMock(
+            return_value=("/cache/report.pdf", "application/pdf")
+        )
+
+        snapshot = asyncio.run(
+            adapter._fetch_thread_snapshot(
+                root_message_id="om_root",
+                native_thread_id="omt_native",
+                current_message_id="om_current",
+            )
+        )
+
+        self.assertIsNotNone(snapshot)
+        assert snapshot is not None
+        self.assertEqual(
+            snapshot.media_urls,
+            ["/cache/photo.png", "/cache/report.pdf"],
+        )
+        self.assertEqual(
+            snapshot.media_types,
+            ["image/png", "application/pdf"],
+        )
+        self.assertEqual(
+            adapter._download_feishu_image.await_args.kwargs["message_id"],
+            "om_photo",
+        )
+        self.assertEqual(
+            adapter._download_feishu_message_resource.await_args.kwargs[
+                "message_id"
+            ],
+            "om_file",
+        )
+
+        adapter._download_feishu_image.return_value = ("", "")
+        incomplete_snapshot = asyncio.run(
+            adapter._fetch_thread_snapshot(
+                root_message_id="om_root",
+                native_thread_id="omt_native",
+                current_message_id="om_current",
+            )
+        )
+        self.assertIsNone(incomplete_snapshot)
+
     def test_handler_hydrates_history_only_before_thread_session_exists(
         self,
     ) -> None:
@@ -719,6 +826,63 @@ class ThreadRoutingTests(unittest.TestCase):
                 exercise(session_active=False, thread_id=None)
             )
         )
+
+    def test_existing_dm_thread_session_skips_history_hydration(self) -> None:
+        adapter = self._adapter(chat_info={"name": "DM", "type": "dm"})
+        adapter._dm_policy = "open"
+        adapter._chat_info_cache = {
+            "oc_chat": {"name": "DM", "type": "dm"}
+        }
+        looked_up_chat_types: list[str] = []
+
+        def session_key(source: Any) -> str:
+            looked_up_chat_types.append(source.chat_type)
+            return f"{source.chat_type}:{source.chat_id}:{source.thread_id}"
+
+        adapter._session_store = SimpleNamespace(
+            _ensure_loaded=lambda: None,
+            _generate_session_key=session_key,
+            _entries={
+                "dm:oc_chat:om_root": SimpleNamespace(suspended=False)
+            },
+            _should_reset=lambda *_args: False,
+        )
+        adapter._is_duplicate = lambda _message_id: False
+        adapter._admit = lambda *_args: None
+        adapter._bot_loop_states = OrderedDict()
+        adapter._process_inbound_message = AsyncMock()
+
+        asyncio.run(
+            adapter._handle_message_event_data(
+                SimpleNamespace(
+                    event=SimpleNamespace(
+                        sender=SimpleNamespace(
+                            sender_type="user",
+                            sender_id=SimpleNamespace(
+                                open_id="ou_user",
+                                user_id="u_user",
+                                union_id="on_user",
+                            ),
+                        ),
+                        message=SimpleNamespace(
+                            chat_id="oc_chat",
+                            chat_type="p2p",
+                            message_id="om_followup",
+                            root_id="om_root",
+                            thread_id="omt_native",
+                            create_time=None,
+                        ),
+                    )
+                )
+            )
+        )
+
+        self.assertFalse(
+            adapter._process_inbound_message.await_args.kwargs[
+                "hydrate_thread_history"
+            ]
+        )
+        self.assertEqual(looked_up_chat_types, ["dm"])
 
     def test_thread_capable_group_root_uses_its_own_message_id(self) -> None:
         """Both topic-style roots start a session despite carrying thread_id."""
