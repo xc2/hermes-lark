@@ -3415,6 +3415,22 @@ class FeishuAdapter(BasePlatformAdapter):
             self._cardkit_route_key(chat_id, thread_id)
         )
 
+    def _cardkit_boundary_is_current(
+        self,
+        state: Any,
+        *,
+        chat_id: str,
+        thread_id: str,
+        resume_anchor: str,
+    ) -> bool:
+        """Return whether a delayed segment request may still commit."""
+        return (
+            not state.closed
+            and self._known_cardkit_state_for_route(chat_id, thread_id) is state
+            and str(getattr(state, "resume_anchor_message_id", "") or "")
+            == resume_anchor
+        )
+
     async def _cardkit_create(self, card: Dict[str, Any]) -> Any:
         """Create one CardKit entity from a JSON 2.0 card."""
         body = (
@@ -3791,6 +3807,10 @@ class FeishuAdapter(BasePlatformAdapter):
             build_initial_card,
         )
 
+        existing_state = state
+        expected_resume_anchor = str(
+            getattr(state, "resume_anchor_message_id", "") or ""
+        )
         initial_card = build_initial_card()
         try:
             create_response = await self._cardkit_create(initial_card)
@@ -3807,6 +3827,15 @@ class FeishuAdapter(BasePlatformAdapter):
             if not card_id:
                 logger.warning("[Feishu] CardKit create omitted card_id")
                 return None
+            if existing_state is not None:
+                async with existing_state.lock:
+                    if not self._cardkit_boundary_is_current(
+                        existing_state,
+                        chat_id=chat_id,
+                        thread_id=thread_id,
+                        resume_anchor=expected_resume_anchor,
+                    ):
+                        return None
             metadata = {
                 "thread_id": thread_id,
                 "reply_to_message_id": reply_to,
@@ -4074,12 +4103,13 @@ class FeishuAdapter(BasePlatformAdapter):
                 "artifact",
             }:
                 return False
+            resume_anchor = str(
+                getattr(state, "resume_anchor_message_id", "") or ""
+            )
             resumed = await self._create_cardkit_segment(
                 chat_id=state.chat_id,
                 thread_id=state.thread_id,
-                reply_to=str(
-                    getattr(state, "resume_anchor_message_id", "") or ""
-                ),
+                reply_to=resume_anchor,
                 active_input_message_id=str(
                     getattr(state, "active_input_message_id", "") or ""
                 ),
@@ -4089,7 +4119,14 @@ class FeishuAdapter(BasePlatformAdapter):
                 state=state,
             )
             if resumed is None:
-                state.suspension_reason = "fallback"
+                async with state.lock:
+                    if self._cardkit_boundary_is_current(
+                        state,
+                        chat_id=state.chat_id,
+                        thread_id=state.thread_id,
+                        resume_anchor=resume_anchor,
+                    ):
+                        state.suspension_reason = "fallback"
             return resumed is state
 
     async def _continue_cardkit_after_steer(
@@ -4124,10 +4161,18 @@ class FeishuAdapter(BasePlatformAdapter):
             command_origin=command_origin,
             state=state,
         )
-        if continuation is None:
-            state.active_input_message_id = active_input_message_id
-            state.suspension_reason = "fallback"
         async with state.lock:
+            if (
+                continuation is None
+                and self._cardkit_boundary_is_current(
+                    state,
+                    chat_id=chat_id,
+                    thread_id=thread_id,
+                    resume_anchor=anchor_message_id,
+                )
+            ):
+                state.active_input_message_id = active_input_message_id
+                state.suspension_reason = "fallback"
             state.segment_transitioning = False
             deferred_terminal = state.deferred_terminal
             state.deferred_terminal = None

@@ -1593,6 +1593,110 @@ class CardKitAdapterTests(unittest.TestCase):
         }
         self.assertLessEqual(streaming_cards, closed_cards)
 
+    def test_inflight_artifact_resume_cannot_cross_a_new_boundary(self) -> None:
+        """A stale resume cannot reopen or replace a later turn boundary."""
+        for boundary in ("cancel", "steer"):
+            with self.subTest(boundary=boundary):
+                adapter, _calls = self._adapter()
+                adapter._reactions_enabled = lambda: False
+                pending_create = asyncio.Event()
+                release_create = asyncio.Event()
+                created = 0
+                sent_cards: list[tuple[str, str | None]] = []
+
+                async def create(card: dict[str, Any]) -> Any:
+                    nonlocal created
+                    created += 1
+                    card_number = created
+                    if card_number == 2:
+                        pending_create.set()
+                        await release_create.wait()
+                    return SimpleNamespace(
+                        success=lambda: True,
+                        data=SimpleNamespace(
+                            card_id=f"card-{card_number}"
+                        ),
+                    )
+
+                async def send_with_retry(**kwargs: Any) -> Any:
+                    card_id = json.loads(kwargs["payload"])["data"]["card_id"]
+                    sent_cards.append((card_id, kwargs["reply_to"]))
+                    return SimpleNamespace(
+                        success=lambda: True,
+                        data=SimpleNamespace(message_id=f"om_{card_id}"),
+                    )
+
+                adapter._cardkit_create = create
+                adapter._feishu_send_with_retry = send_with_retry
+
+                async def scenario() -> None:
+                    event = self._event()
+                    state = await adapter._start_cardkit_turn(event)
+                    await adapter._suspend_cardkit_for_boundary(
+                        chat_id="oc_chat",
+                        thread_id="om_root",
+                        message_id="om_artifact",
+                        reason="artifact",
+                    )
+                    callback = asyncio.create_task(
+                        adapter._update_cardkit_tool_for_ticket(
+                            SimpleNamespace(
+                                chat_id="oc_chat",
+                                session_thread_id="om_root",
+                            ),
+                            tool_name="send_message",
+                            tool_call_id="artifact-tool",
+                            status="success",
+                        )
+                    )
+                    await pending_create.wait()
+
+                    if boundary == "cancel":
+                        await adapter.on_processing_complete(
+                            event,
+                            SimpleNamespace(value="cancelled"),
+                        )
+                    else:
+                        await adapter._continue_cardkit_after_steer(
+                            state,
+                            chat_id="oc_chat",
+                            thread_id="om_root",
+                            anchor_message_id="om_steer",
+                            active_input_message_id="om_steer",
+                            command_origin=False,
+                        )
+
+                    release_create.set()
+                    updated = await callback
+
+                    self.assertFalse(updated)
+                    if boundary == "cancel":
+                        self.assertTrue(state.closed)
+                        self.assertIsNone(
+                            adapter._cardkit_state_for_route(
+                                "oc_chat",
+                                "om_root",
+                            )
+                        )
+                        self.assertEqual(sent_cards, [("card-1", "om_root")])
+                    else:
+                        self.assertFalse(state.closed)
+                        self.assertEqual(state.card_id, "card-3")
+                        self.assertEqual(
+                            state.active_input_message_id,
+                            "om_steer",
+                        )
+                        self.assertEqual(state.suspension_reason, "")
+                        self.assertEqual(
+                            sent_cards,
+                            [
+                                ("card-1", "om_root"),
+                                ("card-3", "om_steer"),
+                            ],
+                        )
+
+                asyncio.run(scenario())
+
     def test_artifact_boundary_resumes_before_terminal_send(self) -> None:
         """A terminal text send continues below an earlier attachment."""
         adapter, calls = self._adapter()
