@@ -3882,6 +3882,16 @@ class FeishuAdapter(BasePlatformAdapter):
                     trace_path=Path(trace_path) if trace_path else None,
                 )
             async with state.lock:
+                if (
+                    existing_state is not None
+                    and not self._cardkit_boundary_is_current(
+                        existing_state,
+                        chat_id=chat_id,
+                        thread_id=thread_id,
+                        resume_anchor=expected_resume_anchor,
+                    )
+                ):
+                    return None
                 state.card_id = card_id
                 state.message_id = message_id
                 state.content = ""
@@ -4127,6 +4137,17 @@ class FeishuAdapter(BasePlatformAdapter):
                         resume_anchor=resume_anchor,
                     ):
                         state.suspension_reason = "fallback"
+                    elif (
+                        not state.closed
+                        and not state.unavailable
+                        and self._known_cardkit_state_for_route(
+                            state.chat_id,
+                            state.thread_id,
+                        )
+                        is state
+                        and getattr(state, "segment_open", True)
+                    ):
+                        return True
             return resumed is state
 
     async def _continue_cardkit_after_steer(
