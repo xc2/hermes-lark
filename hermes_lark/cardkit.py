@@ -291,6 +291,11 @@ class CardKitConversationState:
         repr=False,
         compare=False,
     )
+    resume_lock: asyncio.Lock = field(
+        default_factory=asyncio.Lock,
+        repr=False,
+        compare=False,
+    )
 
     def next_sequence(self) -> int:
         """Reserve the next API sequence while the caller holds ``lock``."""

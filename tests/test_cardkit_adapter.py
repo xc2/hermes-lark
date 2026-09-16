@@ -1376,6 +1376,53 @@ class CardKitAdapterTests(unittest.TestCase):
             ["om_root", "om_approval"],
         )
 
+    def test_cancelled_approval_cannot_resume_from_a_late_tool_callback(
+        self,
+    ) -> None:
+        """Cancellation retires a waiting approval CardKit route."""
+        adapter, calls = self._adapter()
+        adapter._reactions_enabled = lambda: False
+
+        async def scenario() -> None:
+            event = self._event()
+            state = await adapter._start_cardkit_turn(event)
+            await adapter._suspend_cardkit_for_boundary(
+                chat_id="oc_chat",
+                thread_id="om_root",
+                message_id="om_approval",
+                reason="approval",
+            )
+            await adapter.on_processing_complete(
+                event,
+                SimpleNamespace(value="cancelled"),
+            )
+            creates_before_callback = sum(
+                call[0] == "create" for call in calls
+            )
+            updated = await adapter._update_cardkit_tool_for_ticket(
+                SimpleNamespace(
+                    chat_id="oc_chat",
+                    session_thread_id="om_root",
+                ),
+                tool_name="terminal",
+                tool_call_id="approval-tool",
+                status="cancelled",
+            )
+
+            self.assertFalse(updated)
+            self.assertTrue(state.closed)
+            self.assertEqual(state.phase, "stopped")
+            self.assertNotIn(
+                ("oc_chat", "om_root"),
+                adapter._cardkit_states_by_route,
+            )
+            self.assertEqual(
+                sum(call[0] == "create" for call in calls),
+                creates_before_callback,
+            )
+
+        asyncio.run(scenario())
+
     def test_artifact_boundary_resumes_streaming_below_the_attachment(self) -> None:
         """A native attachment becomes the anchor for later assistant text."""
         adapter, calls = self._adapter()
@@ -1441,6 +1488,110 @@ class CardKitAdapterTests(unittest.TestCase):
             and "Continued below" in json.dumps(call[1], ensure_ascii=False)
         ]
         self.assertEqual(len(continued), 1)
+
+    def test_concurrent_artifact_resumes_share_one_continuation_card(
+        self,
+    ) -> None:
+        """Heartbeat and tool completion serialize one artifact resume."""
+        adapter, calls = self._adapter()
+        adapter._reactions_enabled = lambda: False
+        created = 0
+        first_resume_started = asyncio.Event()
+        release_first_resume = asyncio.Event()
+        sent_cards: list[str] = []
+        streaming_updates: list[tuple[str, bool]] = []
+
+        async def create(card: dict[str, Any]) -> Any:
+            nonlocal created
+            created += 1
+            card_number = created
+            if card_number == 2:
+                first_resume_started.set()
+                await release_first_resume.wait()
+            return SimpleNamespace(
+                success=lambda: True,
+                data=SimpleNamespace(card_id=f"card-{card_number}"),
+            )
+
+        async def send_with_retry(**kwargs: Any) -> Any:
+            card_id = json.loads(kwargs["payload"])["data"]["card_id"]
+            sent_cards.append(card_id)
+            return SimpleNamespace(
+                success=lambda: True,
+                data=SimpleNamespace(message_id=f"om_{card_id}"),
+            )
+
+        async def update(
+            state: Any,
+            card: dict[str, Any],
+            sequence: int,
+        ) -> Any:
+            del sequence
+            streaming_updates.append(
+                (state.card_id, card["config"]["streaming_mode"])
+            )
+            return SimpleNamespace(success=lambda: True, data=SimpleNamespace())
+
+        adapter._cardkit_create = create
+        adapter._feishu_send_with_retry = send_with_retry
+        adapter._cardkit_update = update
+
+        async def scenario() -> None:
+            state = await adapter._start_cardkit_turn(self._event())
+            await adapter._suspend_cardkit_for_boundary(
+                chat_id="oc_chat",
+                thread_id="om_root",
+                message_id="om_artifact",
+                reason="artifact",
+            )
+            ticket = SimpleNamespace(
+                chat_id="oc_chat",
+                session_thread_id="om_root",
+            )
+            tool_update = asyncio.create_task(
+                adapter._update_cardkit_tool_for_ticket(
+                    ticket,
+                    tool_name="tool_a",
+                    tool_call_id="a",
+                    status="success",
+                )
+            )
+            await first_resume_started.wait()
+            heartbeat = asyncio.create_task(
+                adapter.send(
+                    "oc_chat",
+                    "⏳ Working — 3 min — send_message",
+                    metadata={"thread_id": "om_root"},
+                )
+            )
+            await asyncio.sleep(0)
+            release_first_resume.set()
+            await asyncio.gather(tool_update, heartbeat)
+
+            state.turn_terminal = True
+            final = await adapter.edit_message(
+                "oc_chat",
+                state.message_id,
+                "final answer",
+                finalize=True,
+                metadata={"thread_id": "om_root"},
+            )
+
+            self.assertTrue(final.success)
+            self.assertTrue(state.closed)
+            self.assertEqual(state.card_id, "card-2")
+            self.assertEqual(list(state.tools), ["a"])
+
+        asyncio.run(scenario())
+
+        self.assertEqual(sent_cards, ["card-1", "card-2"])
+        streaming_cards = {
+            card_id for card_id, streaming in streaming_updates if streaming
+        }
+        closed_cards = {
+            card_id for card_id, streaming in streaming_updates if not streaming
+        }
+        self.assertLessEqual(streaming_cards, closed_cards)
 
     def test_artifact_boundary_resumes_before_terminal_send(self) -> None:
         """A terminal text send continues below an earlier attachment."""

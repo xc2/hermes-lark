@@ -4064,26 +4064,33 @@ class FeishuAdapter(BasePlatformAdapter):
 
     async def _resume_cardkit_segment_for_output(self, state: Any) -> bool:
         """Resume after a blocking approval or independent artifact."""
-        if getattr(state, "segment_open", True):
-            return True
-        if getattr(state, "suspension_reason", "") not in {
-            "approval",
-            "artifact",
-        }:
-            return False
-        resumed = await self._create_cardkit_segment(
-            chat_id=state.chat_id,
-            thread_id=state.thread_id,
-            reply_to=str(getattr(state, "resume_anchor_message_id", "") or ""),
-            active_input_message_id=str(
-                getattr(state, "active_input_message_id", "") or ""
-            ),
-            command_origin=bool(getattr(state, "command_origin", False)),
-            state=state,
-        )
-        if resumed is None:
-            state.suspension_reason = "fallback"
-        return resumed is state
+        async with state.resume_lock:
+            if state.closed or state.unavailable:
+                return False
+            if getattr(state, "segment_open", True):
+                return True
+            if getattr(state, "suspension_reason", "") not in {
+                "approval",
+                "artifact",
+            }:
+                return False
+            resumed = await self._create_cardkit_segment(
+                chat_id=state.chat_id,
+                thread_id=state.thread_id,
+                reply_to=str(
+                    getattr(state, "resume_anchor_message_id", "") or ""
+                ),
+                active_input_message_id=str(
+                    getattr(state, "active_input_message_id", "") or ""
+                ),
+                command_origin=bool(
+                    getattr(state, "command_origin", False)
+                ),
+                state=state,
+            )
+            if resumed is None:
+                state.suspension_reason = "fallback"
+            return resumed is state
 
     async def _continue_cardkit_after_steer(
         self,
@@ -10037,8 +10044,11 @@ class FeishuAdapter(BasePlatformAdapter):
                     )
             elif (
                 not cardkit_state.closed
-                and getattr(cardkit_state, "suspension_reason", "")
-                == "artifact"
+                and (
+                    getattr(cardkit_state, "suspension_reason", "")
+                    == "artifact"
+                    or outcome_value != "success"
+                )
             ):
                 cardkit_state.closed = True
                 cardkit_state.phase = (
