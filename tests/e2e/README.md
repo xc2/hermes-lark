@@ -30,8 +30,8 @@ the live suite internally.
 - A new root in a regular group requires a mention. Follow-ups in an active
   thread need no mention and retain context.
 - When a human-only thread already contains several messages, its first bot
-  mention creates a session in that native thread and imports the earlier
-  thread messages as context. No session may exist before that mention.
+  mention creates a session in that native thread and imports all earlier text,
+  image, video, and file content. No session may exist before that mention.
 - Each run creates a fresh group with `group_message_type=thread` and applies
   the same group mention, thread, and context cases.
 - Quoting a DM root creates a new thread/session rooted at the quote message; it
@@ -41,13 +41,20 @@ the live suite internally.
   observes Thinking, Generating, three cumulative `cardElement.content`
   updates, closing `streaming_mode`, and the banner-free successful full-card
   update, with no duplicate partial messages.
+- Repeated Steer messages, including acknowledgement debounce, each freeze the
+  old card and move subsequent output below the newest user message. Tool
+  completion after Steer is routed to that newest card.
+- A question freezes the response card above its interaction card. Approval
+  denial and `/stop` also leave the response card terminal, without a late
+  callback reopening it.
 - A deterministic remote PNG is initially stripped from a CardKit frame, then
   re-flushed as an `img_*` key after Feishu upload. The raw URL may not reach a
   card request or its E2E trace, and terminal completion must retain that key.
 - A deterministic provider emits real `reasoning_content`, followed by a
   terminal tool call. The suite checks running/completed tool status on the card
   and matching assistant `tool_calls`, tool result, and reasoning fields in
-  `SessionDB`.
+  `SessionDB`. Its completed card leads with the answer, collapses tool details,
+  and uses the answer for the chat-list summary.
 - A sensitive terminal command must produce an approval card in the same
   thread, with Allow Once, Session, Always, and Deny actions. The command may not
   execute before approval. The test sends `/deny` in that thread through
@@ -226,6 +233,12 @@ The deterministic model stub supports these protocols:
 - `HERMES_E2E_TOOL:<marker>` first emits reasoning and a terminal tool call,
   then streams the final marker only after receiving the corresponding
   `role=tool` row.
+- `HERMES_E2E_STEER_TOOL:<marker>` holds a safe terminal tool while the test
+  inserts a Steer message, then verifies completion on the continuation card.
+- `HERMES_E2E_QUESTION:<marker>` invokes `feishu_ask_user_question` through the
+  deferred tool bridge and leaves the original stream in its waiting state.
+- `HERMES_E2E_EXISTING_MEDIA_CONTEXT_PROBE` reports whether an imported native
+  thread supplied its root, history, file, and video to the model.
 - `HERMES_E2E_APPROVAL:<marker>` asks to remove a unique sentinel in an isolated
   data directory, reliably triggering Hermes' dangerous-command approval. It
   returns the final marker after receiving a denied tool row.
@@ -239,8 +252,9 @@ The deterministic model stub supports these protocols:
 - `HERMES_E2E_MEDIA_RETURN:<marker>` returns deterministic image and file
   `MEDIA:` directives rooted in the shared E2E data directory.
 
-The E2E gateway explicitly enables `streaming: true`, `replyMode: auto`, and
-processing reactions. It marks the deterministic model as vision-capable so
+The E2E gateway explicitly enables `streaming: true`, `replyMode: auto`, Steer
+busy-input handling, and processing reactions. It marks the deterministic model
+as vision-capable so
 the image-integrity case observes the original native payload at the provider
 boundary. It also permits private URLs only inside the isolated validation
 gateway so the CardKit resolver can fetch the Compose-local model-stub PNG;

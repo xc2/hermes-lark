@@ -251,7 +251,7 @@ class CardKitToolStatus:
 
 @dataclass
 class CardKitConversationState:
-    """Mutable state and write serialization for one conversational card."""
+    """Mutable CardKit state for one logical turn and its active segment."""
 
     chat_id: str
     thread_id: str
@@ -262,6 +262,16 @@ class CardKitConversationState:
     heartbeat_content: str = ""
     last_flushed_content: str = ""
     tools: dict[str, Any] = field(default_factory=dict)
+    segment_open: bool = True
+    active_input_message_id: str = ""
+    resume_anchor_message_id: str = ""
+    suspension_reason: str = ""
+    fallback_message_id: str = ""
+    segment_transitioning: bool = False
+    deferred_tool_updates: dict[str, CardKitToolStatus] = field(
+        default_factory=dict
+    )
+    deferred_terminal: Optional[tuple[str, bool, bool]] = None
     closed: bool = False
     unavailable: bool = False
     streaming_disabled: bool = False
@@ -280,6 +290,11 @@ class CardKitConversationState:
         compare=False,
     )
     lock: asyncio.Lock = field(
+        default_factory=asyncio.Lock,
+        repr=False,
+        compare=False,
+    )
+    resume_lock: asyncio.Lock = field(
         default_factory=asyncio.Lock,
         repr=False,
         compare=False,
@@ -612,6 +627,18 @@ def _build_lifecycle_card(
         content if streaming else sanitize_terminal_cardkit_markdown(content)
     )
     elements: list[dict[str, Any]] = []
+    content_element = {
+        "tag": "markdown",
+        "content": visible_content,
+        "text_align": "left",
+        "text_size": "normal_v2",
+        "margin": "0px 0px 0px 0px",
+        "element_id": STREAMING_ELEMENT_ID,
+    }
+    terminal_summary = ""
+    if not streaming and visible_content.strip():
+        terminal_summary = re.sub(r"\s+", " ", visible_content).strip()[:200]
+        elements.append(content_element)
     if lifecycle_content:
         elements.append(
             {
@@ -632,7 +659,7 @@ def _build_lifecycle_card(
         for value in (progress_content, heartbeat_content)
         if value.strip()
     ]
-    if streaming and progress_parts:
+    if progress_parts:
         elements.append(
             {
                 "tag": "markdown",
@@ -643,16 +670,8 @@ def _build_lifecycle_card(
                 "element_id": PROGRESS_ELEMENT_ID,
             }
         )
-    elements.append(
-        {
-            "tag": "markdown",
-            "content": visible_content,
-            "text_align": "left",
-            "text_size": "normal_v2",
-            "margin": "0px 0px 0px 0px",
-            "element_id": STREAMING_ELEMENT_ID,
-        }
-    )
+    if streaming or not visible_content.strip():
+        elements.append(content_element)
     if streaming:
         elements.append(
             {
@@ -675,13 +694,13 @@ def _build_lifecycle_card(
             "locales": ["zh_cn", "en_us"],
             "summary": (
                 {
-                    "content": summary,
+                    "content": terminal_summary or summary,
                     "i18n_content": {
-                        "zh_cn": summary_zh,
-                        "en_us": summary,
+                        "zh_cn": terminal_summary or summary_zh,
+                        "en_us": terminal_summary or summary,
                     },
                 }
-                if summary or summary_zh
+                if terminal_summary or summary or summary_zh
                 else {"content": ""}
             ),
         },
@@ -724,6 +743,74 @@ def build_complete_card(
         content=content,
         streaming=False,
         tools=tools,
+    )
+
+
+def build_continued_card(
+    content: str,
+    *,
+    tools: Optional[Mapping[str, Any]] = None,
+    progress_content: str = "",
+) -> dict[str, Any]:
+    """Build a frozen segment whose logical turn continues below."""
+    return _build_lifecycle_card(
+        lifecycle_content="↪️ **Continued below**",
+        lifecycle_content_zh="↪️ **Continued below**",
+        summary="Continued below",
+        summary_zh="Continued below",
+        content=content,
+        streaming=False,
+        tools=tools,
+        progress_content=progress_content,
+    )
+
+
+def build_waiting_card(
+    content: str,
+    *,
+    reason: str,
+    tools: Optional[Mapping[str, Any]] = None,
+    progress_content: str = "",
+) -> dict[str, Any]:
+    """Build a frozen segment waiting for an interaction below."""
+    labels = {
+        "question": (
+            "⏸️ **Waiting for your answer below**",
+            "⏸️ **Waiting for your answer below**",
+            "Waiting for your answer",
+            "Waiting for your answer",
+        ),
+        "approval": (
+            "⏸️ **Waiting for your approval below**",
+            "⏸️ **Waiting for your approval below**",
+            "Waiting for approval",
+            "Waiting for approval",
+        ),
+        "authorization": (
+            "⏸️ **Authorization required below**",
+            "⏸️ **Authorization required below**",
+            "Authorization required",
+            "Authorization required",
+        ),
+    }
+    label, label_zh, summary, summary_zh = labels.get(
+        reason,
+        (
+            "⏸️ **Action required below**",
+            "⏸️ **Action required below**",
+            "Action required",
+            "Action required",
+        ),
+    )
+    return _build_lifecycle_card(
+        lifecycle_content=label,
+        lifecycle_content_zh=label_zh,
+        summary=summary,
+        summary_zh=summary_zh,
+        content=content,
+        streaming=False,
+        tools=tools,
+        progress_content=progress_content,
     )
 
 

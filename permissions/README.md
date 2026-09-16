@@ -18,6 +18,14 @@ version, and then let the requesting user complete OAuth. This keeps a normal
 application at least privilege instead of granting every document, calendar,
 task, Base, Drive, and IM operation up front.
 
+Existing-thread session bootstrap uses the application's bot identity, not a
+user access token. The production tenant baseline already includes
+`im:message:readonly`, `im:message.group_msg`, and
+`im:message.p2p_msg:readonly`, which let the bot list visible thread messages,
+plus `im:resource` for downloading their images, video, and files in group or
+direct conversations. Publish and approve a new application version after
+importing those scopes.
+
 `/feishu auth` and `feishu_oauth_batch_auth` authorize user scopes that are
 already enabled for the application; they do not add new application
 permissions. The checked-in `offline_access` user scope allows the normal

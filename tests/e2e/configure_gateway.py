@@ -51,6 +51,7 @@ def main() -> None:
             "buffer_threshold": 1,
         },
         "display": {
+            "busy_input_mode": "steer",
             "platforms": {
                 "feishu": {
                     "streaming": True,

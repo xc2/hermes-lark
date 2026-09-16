@@ -37,7 +37,7 @@ Never store a real secret in a repository configuration file.
 | `groupPolicy` | `open` | Group members may trigger the bot, subject to the root mention gate |
 | `allowBots` | `mentions` | Accepts another bot only when it explicitly mentions this bot |
 | `reactionNotifications` | `own` | Injects reactions only for messages sent by this bot |
-| `historyLimit` | `50` | Adds at most 50 earlier human messages from an unactivated native thread |
+| `historyLimit` | `50` | Caps the legacy in-process buffer; first activation loads the complete preceding native-thread snapshot from Feishu |
 | `textChunkLimit` | `4000` | Maximum characters in one outbound text chunk |
 | `chunkMode` | `none` | Accepts the pinned upstream values `newline`, `paragraph`, and `none` |
 | `mediaMaxMb` | `30` | Maximum inbound media size before caching |
@@ -145,6 +145,16 @@ gateway:
 `replyMode` accepts `auto`, `static`, `streaming`, or a mapping with `direct`,
 `group`, and `default` values. Streaming remains disabled unless `streaming` is
 explicitly `true`.
+
+Within one logical turn, an accepted mid-turn steer, a blocking interactive
+card, or a native artifact closes the streaming segment above that timeline
+boundary. Subsequent progress and the final answer use a new segment below the
+user message, interaction card, or artifact; the frozen segment is never edited
+again. Hermes' Steered/Redirected acknowledgement is the normal commit signal
+for a busy user message. Suppressed or debounced acknowledgements use the
+successful Steer busy dispatch after verifying that Hermes did not queue the
+event. A failed continuation card degrades to an ordinary message below the
+same boundary.
 
 When CardKit is enabled, disable Hermes' separate tool-progress messages to
 avoid duplicate status output:

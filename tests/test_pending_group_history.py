@@ -316,6 +316,36 @@ class PendingGroupHistoryTests(unittest.TestCase):
             adapter._pending_group_histories,
         )
 
+    def test_authoritative_snapshot_discards_pending_history_without_merging(
+        self,
+    ) -> None:
+        adapter = self._new_adapter()
+        adapter._record_pending_group_history(
+            self._sender(),
+            self._message(
+                "cached copy",
+                thread_id="omt_1",
+                root_id="om_root_1",
+            ),
+        )
+        event = self._event(
+            "current",
+            channel_context="authoritative snapshot",
+        )
+
+        adapter._apply_pending_group_history(
+            event,
+            chat_id="oc_chat",
+            thread_id="om_root_1",
+            discard_only=True,
+        )
+
+        self.assertEqual(event.channel_context, "authoritative snapshot")
+        self.assertNotIn(
+            ("oc_chat", "om_root_1"),
+            adapter._pending_group_histories,
+        )
+
     def test_commands_preserve_history_except_bare_new_and_reset(self) -> None:
         for clearing_command in ("/new", " /RESET "):
             with self.subTest(command=clearing_command):

@@ -268,8 +268,17 @@ class CardKitStreamingTests(unittest.IsolatedAsyncioTestCase):
             tools=succeeded,
         )
         self.assertIs(complete["config"]["streaming_mode"], False)
-        self.assertEqual(complete["config"]["summary"], {"content": ""})
+        self.assertEqual(
+            complete["config"]["summary"]["content"],
+            "final answer",
+        )
         complete_elements = complete["body"]["elements"]
+        self.assertEqual(
+            complete_elements[0].get("element_id"),
+            "streaming_content",
+        )
+        self.assertEqual(complete_elements[1].get("tag"), "collapsible_panel")
+        self.assertIs(complete_elements[1].get("expanded"), False)
         self.assertFalse(
             any(
                 element.get("element_id") == "lifecycle_status"
@@ -299,19 +308,27 @@ class CardKitStreamingTests(unittest.IsolatedAsyncioTestCase):
 
         stopped = self.module.build_stopped_card("partial answer", tools=running)
         self.assertIs(stopped["config"]["streaming_mode"], False)
-        self.assertEqual(stopped["config"]["summary"]["content"], "Stopped")
-        self.assertEqual(stopped["body"]["elements"][0]["content"], "⏹️ **Stopped**")
+        self.assertEqual(stopped["config"]["summary"]["content"], "partial answer")
+        self.assertEqual(
+            stopped["body"]["elements"][0].get("element_id"),
+            "streaming_content",
+        )
+        self.assertEqual(stopped["body"]["elements"][1]["content"], "⏹️ **Stopped**")
 
         error = self.module.build_error_card("model failed", tools=running)
         self.assertIs(error["config"]["streaming_mode"], False)
-        self.assertEqual(error["config"]["summary"]["content"], "Error")
+        self.assertEqual(error["config"]["summary"]["content"], "model failed")
         self.assertEqual(
             error["config"]["summary"]["i18n_content"],
-            {"zh_cn": "Error", "en_us": "Error"},
+            {"zh_cn": "model failed", "en_us": "model failed"},
         )
-        self.assertEqual(error["body"]["elements"][0]["content"], "❌ **Error**")
         self.assertEqual(
-            error["body"]["elements"][0]["i18n_content"],
+            error["body"]["elements"][0].get("element_id"),
+            "streaming_content",
+        )
+        self.assertEqual(error["body"]["elements"][1]["content"], "❌ **Error**")
+        self.assertEqual(
+            error["body"]["elements"][1]["i18n_content"],
             {"zh_cn": "❌ **Error**", "en_us": "❌ **Error**"},
         )
         self.assertEqual(
@@ -327,6 +344,52 @@ class CardKitStreamingTests(unittest.IsolatedAsyncioTestCase):
                 element.get("element_id") == "loading_icon"
                 for element in error["body"]["elements"]
             )
+        )
+
+    def test_segment_boundaries_are_static_and_preserve_visible_progress(self) -> None:
+        """Steer and question boundaries freeze the activity shown above them."""
+        continued = self.module.build_continued_card(
+            "partial answer",
+            progress_content="Checked the source.",
+        )
+        waiting = self.module.build_waiting_card(
+            "partial answer",
+            reason="question",
+            progress_content="Checked the source.",
+        )
+
+        for card in (continued, waiting):
+            with self.subTest(summary=card["config"]["summary"]["content"]):
+                self.assertFalse(card["config"]["streaming_mode"])
+                self.assertEqual(
+                    card["config"]["summary"]["content"],
+                    "partial answer",
+                )
+                self.assertEqual(
+                    card["body"]["elements"][0].get("element_id"),
+                    "streaming_content",
+                )
+                self.assertFalse(
+                    any(
+                        element.get("element_id") == "loading_icon"
+                        for element in card["body"]["elements"]
+                    )
+                )
+                self.assertEqual(
+                    next(
+                        element["content"]
+                        for element in card["body"]["elements"]
+                        if element.get("element_id") == "progress_content"
+                    ),
+                    "Checked the source.",
+                )
+        self.assertIn(
+                "Continued below",
+            continued["body"]["elements"][1]["i18n_content"]["zh_cn"],
+        )
+        self.assertIn(
+                "Waiting for your answer",
+            waiting["body"]["elements"][1]["i18n_content"]["zh_cn"],
         )
 
     async def test_trace_is_structured_and_only_written_for_explicit_path(self) -> None:
