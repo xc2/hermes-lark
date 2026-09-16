@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import sys
 import unittest
 from collections import OrderedDict
@@ -562,72 +563,99 @@ class ThreadRoutingTests(unittest.TestCase):
 
         self.assertIsNone(snapshot)
 
-    def test_parent_context_fetch_normalizes_and_downloads_root_media(
+    def test_thread_snapshot_preserves_complete_card_and_forward_text(
         self,
     ) -> None:
-        adapter = object.__new__(self.adapter_module.FeishuAdapter)
-        get_message = object()
-        adapter._client = SimpleNamespace(
-            im=SimpleNamespace(
-                v1=SimpleNamespace(
-                    message=SimpleNamespace(get=get_message),
-                )
-            )
-        )
-        adapter._message_text_cache = OrderedDict()
-        adapter._bot_open_id = "ou_self"
-        adapter._bot_user_id = ""
-        adapter._bot_name = "Hermes"
-        adapter._run_blocking = AsyncMock(
-            return_value=SimpleNamespace(
-                success=lambda: True,
-                data=SimpleNamespace(
-                    items=[
-                        SimpleNamespace(
-                            msg_type="post",
-                            body=SimpleNamespace(
-                                content=(
-                                    '{"title":"Root post","content":['
-                                    '[{"tag":"img","image_key":"img_root"},'
-                                    '{"tag":"video","file_key":"file_root",'
-                                    '"file_name":"root.mp4"}]]}'
-                                )
-                            ),
-                            mentions=[],
+        payloads = {
+            "merge_forward": {
+                "title": "Forwarded discussion",
+                "messages": [
+                    {"text": f"Important item {index}"}
+                    for index in range(15)
+                ],
+            },
+            "interactive": {
+                "elements": [
+                    {
+                        "tag": "markdown",
+                        "content": f"Important item {index}",
+                    }
+                    for index in range(15)
+                ],
+            },
+        }
+
+        for message_type, payload in payloads.items():
+            with self.subTest(message_type=message_type):
+                adapter = object.__new__(self.adapter_module.FeishuAdapter)
+                adapter._client = SimpleNamespace(
+                    im=SimpleNamespace(
+                        v1=SimpleNamespace(
+                            message=SimpleNamespace(list=object())
                         )
-                    ]
-                ),
-            )
-        )
-        adapter._download_feishu_message_resources = AsyncMock(
-            return_value=(
-                ["/cache/root.png", "/cache/root.mp4"],
-                ["image/png", "video/mp4"],
-            )
-        )
+                    )
+                )
+                adapter._bot_open_id = "ou_self"
+                adapter._bot_user_id = ""
+                adapter._bot_name = "Hermes"
+                adapter._sender_name_cache = OrderedDict()
+                root = SimpleNamespace(
+                    message_id="om_root",
+                    thread_id="omt_native",
+                    msg_type=message_type,
+                    body=SimpleNamespace(content=json.dumps(payload)),
+                    mentions=[],
+                    sender=SimpleNamespace(
+                        id="ou_user",
+                        sender_type="user",
+                    ),
+                )
+                adapter._fetch_message_item = AsyncMock(return_value=root)
+                adapter._run_blocking = AsyncMock(
+                    return_value=SimpleNamespace(
+                        success=lambda: True,
+                        data=SimpleNamespace(
+                            items=[
+                                root,
+                                SimpleNamespace(message_id="om_current"),
+                            ],
+                            has_more=False,
+                        ),
+                    )
+                )
+                adapter._download_feishu_message_resources = AsyncMock(
+                    return_value=([], [])
+                )
+                expanded_text = "\n".join(
+                    f"Important item {index}" for index in range(15)
+                )
+                adapter._expand_merge_forward_message = AsyncMock(
+                    return_value=self.adapter_module.FeishuNormalizedMessage(
+                        raw_type="merge_forward",
+                        text_content=expanded_text,
+                        relation_kind="merge_forward",
+                        metadata={"api_expanded": True},
+                    )
+                )
 
-        text, media_urls, media_types = asyncio.run(
-            adapter._fetch_message_context(
-                "om_root",
-                include_media=True,
-            )
-        )
+                snapshot = asyncio.run(
+                    adapter._fetch_thread_snapshot(
+                        root_message_id="om_root",
+                        native_thread_id="omt_native",
+                        current_message_id="om_current",
+                    )
+                )
 
-        self.assertIn("Root post", text)
-        self.assertEqual(
-            media_urls,
-            ["/cache/root.png", "/cache/root.mp4"],
-        )
-        self.assertEqual(media_types, ["image/png", "video/mp4"])
-        adapter._run_blocking.assert_awaited_once()
-        self.assertIs(adapter._run_blocking.await_args.args[0], get_message)
-        normalized = (
-            adapter._download_feishu_message_resources.await_args.kwargs[
-                "normalized"
-            ]
-        )
-        self.assertEqual(normalized.image_keys, ["img_root"])
-        self.assertEqual(normalized.media_refs[0].file_key, "file_root")
+                self.assertIsNotNone(snapshot)
+                assert snapshot is not None
+                self.assertIn(
+                    "Important item 14",
+                    snapshot.message_texts["om_root"],
+                )
+                if message_type == "merge_forward":
+                    adapter._expand_merge_forward_message.assert_awaited_once()
+                else:
+                    adapter._expand_merge_forward_message.assert_not_awaited()
 
     def test_handler_hydrates_history_only_before_thread_session_exists(
         self,

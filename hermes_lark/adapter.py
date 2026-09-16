@@ -1199,6 +1199,7 @@ def normalize_feishu_message(
     raw_content: str,
     mentions: Optional[Sequence[Any]] = None,
     bot: _FeishuBotIdentity = _FeishuBotIdentity(),
+    complete: bool = False,
 ) -> FeishuNormalizedMessage:
     normalized_type = str(message_type or "").strip().lower()
     payload = _load_feishu_payload(raw_content)
@@ -1278,7 +1279,7 @@ def normalize_feishu_message(
             mentions=mention_refs,
         )
     if normalized_type == "merge_forward":
-        return _normalize_merge_forward_message(payload)
+        return _normalize_merge_forward_message(payload, complete=complete)
     if normalized_type == "share_chat":
         return _normalize_share_chat_message(payload)
     if normalized_type == "share_user":
@@ -1340,7 +1341,11 @@ def normalize_feishu_message(
     if normalized_type == "vote":
         return _normalize_vote_message(payload, mention_refs)
     if normalized_type in {"interactive", "card"}:
-        return _normalize_interactive_message(normalized_type, payload)
+        return _normalize_interactive_message(
+            normalized_type,
+            payload,
+            complete=complete,
+        )
 
     unknown_text = payload.get("text")
     return FeishuNormalizedMessage(
@@ -1363,7 +1368,11 @@ def _load_feishu_payload(raw_content: str) -> Dict[str, Any]:
     return parsed if isinstance(parsed, dict) else {"content": parsed}
 
 
-def _normalize_merge_forward_message(payload: Dict[str, Any]) -> FeishuNormalizedMessage:
+def _normalize_merge_forward_message(
+    payload: Dict[str, Any],
+    *,
+    complete: bool = False,
+) -> FeishuNormalizedMessage:
     title = _first_non_empty_text(
         payload.get("title"),
         payload.get("summary"),
@@ -1374,7 +1383,7 @@ def _normalize_merge_forward_message(payload: Dict[str, Any]) -> FeishuNormalize
     lines: List[str] = []
     if title:
         lines.append(title)
-    lines.extend(entries[:8])
+    lines.extend(entries if complete else entries[:8])
     text_content = "\n".join(lines).strip() or FALLBACK_FORWARD_TEXT
     return FeishuNormalizedMessage(
         raw_type="merge_forward",
@@ -1405,7 +1414,12 @@ def _normalize_share_chat_message(payload: Dict[str, Any]) -> FeishuNormalizedMe
     )
 
 
-def _normalize_interactive_message(message_type: str, payload: Dict[str, Any]) -> FeishuNormalizedMessage:
+def _normalize_interactive_message(
+    message_type: str,
+    payload: Dict[str, Any],
+    *,
+    complete: bool = False,
+) -> FeishuNormalizedMessage:
     card_payload = payload.get("card") if isinstance(payload.get("card"), dict) else payload
     title = _first_non_empty_text(
         _find_header_title(card_payload),
@@ -1424,7 +1438,8 @@ def _normalize_interactive_message(message_type: str, payload: Dict[str, Any]) -
     if actions:
         lines.append(f"Actions: {', '.join(actions)}")
 
-    text_content = "\n".join(lines[:12]).strip() or FALLBACK_INTERACTIVE_TEXT
+    selected_lines = lines if complete else lines[:12]
+    text_content = "\n".join(selected_lines).strip() or FALLBACK_INTERACTIVE_TEXT
     return FeishuNormalizedMessage(
         raw_type=message_type,
         text_content=text_content,
@@ -4078,6 +4093,8 @@ class FeishuAdapter(BasePlatformAdapter):
         command_origin: bool,
     ) -> Optional[Any]:
         """Freeze the current segment and open its successor after a steer."""
+        async with state.lock:
+            state.segment_transitioning = True
         if getattr(state, "segment_open", True):
             await self._suspend_cardkit_segment(
                 state,
@@ -4098,6 +4115,22 @@ class FeishuAdapter(BasePlatformAdapter):
         if continuation is None:
             state.active_input_message_id = active_input_message_id
             state.suspension_reason = "fallback"
+        async with state.lock:
+            state.segment_transitioning = False
+            deferred_terminal = state.deferred_terminal
+            state.deferred_terminal = None
+        if deferred_terminal is not None:
+            deferred_content, deferred_error, deferred_stopped = (
+                deferred_terminal
+            )
+            await self._finalize_cardkit(
+                state,
+                deferred_content,
+                error=deferred_error,
+                stopped=deferred_stopped,
+            )
+            if getattr(state, "closed", False):
+                self._forget_cardkit_turn(state)
         return continuation
 
     async def _start_cardkit_turn(self, event: MessageEvent) -> Optional[Any]:
@@ -4423,7 +4456,10 @@ class FeishuAdapter(BasePlatformAdapter):
                     getattr(state, "resume_anchor_message_id", "") or ""
                 )
                 or None,
-                metadata={"thread_id": state.thread_id},
+                metadata={
+                    "thread_id": state.thread_id,
+                    "_cardkit_bypass": True,
+                },
             )
             if result.success and result.message_id:
                 state.fallback_message_id = result.message_id
@@ -4518,6 +4554,26 @@ class FeishuAdapter(BasePlatformAdapter):
             build_stopped_card,
             terminal_cardkit_content,
         )
+
+        async with state.lock:
+            if getattr(state, "segment_transitioning", False):
+                raw_terminal_content = str(content or state.content or "")
+                if stopped and not raw_terminal_content.strip():
+                    raw_terminal_content = "Aborted."
+                prior_terminal = getattr(state, "deferred_terminal", None)
+                if prior_terminal is not None:
+                    prior_content, prior_error, prior_stopped = prior_terminal
+                    if not raw_terminal_content.strip():
+                        raw_terminal_content = prior_content
+                    error = error or prior_error
+                    stopped = stopped or prior_stopped
+                state.content = raw_terminal_content
+                state.deferred_terminal = (
+                    raw_terminal_content,
+                    error,
+                    stopped,
+                )
+                return SendResult(success=True, message_id=state.message_id)
 
         if getattr(state, "suspension_reason", "") == "fallback":
             terminal_state = "stopped" if stopped else "error" if error else "complete"
@@ -4985,17 +5041,28 @@ class FeishuAdapter(BasePlatformAdapter):
             chat_id,
         )
         thread_id = self._cardkit_thread_for_send(reply_to, metadata)
-        progress_kind = _CARDKIT_PROGRESS_DELIVERY_CONTEXT.get()
+        cardkit_bypass = bool(
+            isinstance(metadata, dict) and metadata.get("_cardkit_bypass")
+        )
+        progress_kind = (
+            "" if cardkit_bypass else _CARDKIT_PROGRESS_DELIVERY_CONTEXT.get()
+        )
         if not progress_kind and _CARDKIT_HEARTBEAT_RE.fullmatch(
             formatted.strip()
         ):
             progress_kind = "heartbeat"
         if not progress_kind and _CARDKIT_COMPACTION_RE.match(formatted.strip()):
             progress_kind = "heartbeat"
-        steer_ack = bool(_CARDKIT_STEER_ACK_RE.match(formatted.strip()))
+        steer_ack = not cardkit_bypass and bool(
+            _CARDKIT_STEER_ACK_RE.match(formatted.strip())
+        )
         if not progress_kind and steer_ack:
             progress_kind = "commentary"
-        progress_state = self._known_cardkit_state_for_route(chat_id, thread_id)
+        progress_state = (
+            None
+            if cardkit_bypass
+            else self._known_cardkit_state_for_route(chat_id, thread_id)
+        )
         steer_input_message_id = str(
             reply_to
             or (
@@ -5071,7 +5138,11 @@ class FeishuAdapter(BasePlatformAdapter):
             formatted,
             bot_peer_turn,
         )
-        cardkit_state = self._known_cardkit_state_for_route(chat_id, thread_id)
+        cardkit_state = (
+            None
+            if cardkit_bypass
+            else self._known_cardkit_state_for_route(chat_id, thread_id)
+        )
         cardkit_result = None
         if cardkit_state is not None and isinstance(metadata, dict):
             if metadata.get("expect_edits"):
@@ -9548,7 +9619,9 @@ class FeishuAdapter(BasePlatformAdapter):
         ):
             try:
                 authorized = busy_owner._is_user_authorized(source)
-                busy_mode = busy_owner._effective_busy_input_mode(source)
+                busy_mode = str(
+                    getattr(busy_owner, "_busy_input_mode", "") or ""
+                ).strip().lower()
                 if authorized and busy_mode == "steer":
                     silent_steer_session_key = str(
                         busy_owner._session_key_for_source(source) or ""
@@ -9915,7 +9988,14 @@ class FeishuAdapter(BasePlatformAdapter):
             fallback_open = (
                 getattr(cardkit_state, "suspension_reason", "") == "fallback"
             )
-            if not cardkit_state.closed and (segment_open or fallback_open):
+            transition_open = getattr(
+                cardkit_state,
+                "segment_transitioning",
+                False,
+            )
+            if not cardkit_state.closed and (
+                segment_open or fallback_open or transition_open
+            ):
                 if outcome_value == "success":
                     await self._finalize_cardkit(
                         cardkit_state,
@@ -11052,6 +11132,8 @@ class FeishuAdapter(BasePlatformAdapter):
         self,
         message_id: str,
         fallback: FeishuNormalizedMessage,
+        *,
+        complete: bool = False,
     ) -> FeishuNormalizedMessage:
         """Expand merged-forward children recursively using one Feishu API call."""
         if not message_id:
@@ -11156,6 +11238,7 @@ class FeishuAdapter(BasePlatformAdapter):
                         if isinstance(mentions, list)
                         else None,
                         bot=self._bot_identity(),
+                        complete=complete,
                     )
                     child_content = normalized.text_content
                     if not child_content and isinstance(normalized.metadata, dict):
@@ -11858,7 +11941,24 @@ class FeishuAdapter(BasePlatformAdapter):
                 raw_content=raw_content,
                 mentions=getattr(item, "mentions", None),
                 bot=self._bot_identity(),
+                complete=True,
             )
+            if normalized.raw_type == "merge_forward":
+                normalized = await self._expand_merge_forward_message(
+                    item_message_id,
+                    normalized,
+                    complete=True,
+                )
+                if (
+                    not isinstance(normalized, FeishuNormalizedMessage)
+                    or not bool(normalized.metadata.get("api_expanded"))
+                ):
+                    logger.warning(
+                        "[Feishu] Thread merged-forward message %s could "
+                        "not be expanded completely",
+                        item_message_id,
+                    )
+                    return None
             text = normalized.text_content or str(
                 normalized.metadata.get("placeholder_text") or ""
             ).strip()
@@ -11958,21 +12058,16 @@ class FeishuAdapter(BasePlatformAdapter):
             message_texts=message_texts,
         )
 
-    async def _fetch_message_context(
-        self,
-        message_id: str,
-        *,
-        include_media: bool = False,
-    ) -> tuple[Optional[str], List[str], List[str]]:
+    async def _fetch_message_text(self, message_id: str) -> Optional[str]:
         if not self._client or not message_id:
-            return None, [], []
-        if not include_media and message_id in self._message_text_cache:
+            return None
+        if message_id in self._message_text_cache:
             self._message_text_cache.move_to_end(message_id)
-            return self._message_text_cache[message_id], [], []
+            return self._message_text_cache[message_id]
         try:
             parent = await self._fetch_message_item(message_id)
             if parent is None:
-                return None, [], []
+                return None
             body = getattr(parent, "body", None)
             msg_type = getattr(parent, "msg_type", "") or ""
             raw_content = getattr(body, "content", "") or ""
@@ -11985,28 +12080,10 @@ class FeishuAdapter(BasePlatformAdapter):
             self._message_text_cache[message_id] = text
             while len(self._message_text_cache) > _FEISHU_MESSAGE_TEXT_CACHE_SIZE:
                 self._message_text_cache.popitem(last=False)
-            if not include_media:
-                return text, [], []
-            normalized = normalize_feishu_message(
-                message_type=msg_type,
-                raw_content=raw_content,
-                mentions=parent_mentions,
-                bot=self._bot_identity(),
-            )
-            media_urls, media_types = (
-                await self._download_feishu_message_resources(
-                    message_id=message_id,
-                    normalized=normalized,
-                )
-            )
-            return text, media_urls, media_types
+            return text
         except Exception:
             logger.warning("[Feishu] Failed to fetch parent message %s", message_id, exc_info=True)
-            return None, [], []
-
-    async def _fetch_message_text(self, message_id: str) -> Optional[str]:
-        text, _, _ = await self._fetch_message_context(message_id)
-        return text
+            return None
 
     def _extract_text_from_raw_content(
         self,

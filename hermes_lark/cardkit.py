@@ -267,6 +267,8 @@ class CardKitConversationState:
     resume_anchor_message_id: str = ""
     suspension_reason: str = ""
     fallback_message_id: str = ""
+    segment_transitioning: bool = False
+    deferred_terminal: Optional[tuple[str, bool, bool]] = None
     closed: bool = False
     unavailable: bool = False
     streaming_disabled: bool = False

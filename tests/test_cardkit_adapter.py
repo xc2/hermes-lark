@@ -286,10 +286,7 @@ class CardKitAdapterTests(unittest.TestCase):
             """Expose the pinned Hermes busy-mode observations."""
 
             _draining = False
-
-            @staticmethod
-            def _effective_busy_input_mode(_source: Any) -> str:
-                return "steer"
+            _busy_input_mode = "steer"
 
             @staticmethod
             def _session_key_for_source(_source: Any) -> str:
@@ -414,6 +411,85 @@ class CardKitAdapterTests(unittest.TestCase):
             json.dumps(terminal_card, ensure_ascii=False),
         )
 
+    def test_terminal_output_during_segment_creation_is_delivered(self) -> None:
+        """A final answer racing continuation creation remains terminal."""
+        adapter, calls = self._adapter()
+        adapter._reactions_enabled = lambda: False
+        card_number = 0
+        continuation_started = asyncio.Event()
+        release_continuation = asyncio.Event()
+
+        async def create(card: dict[str, Any]) -> Any:
+            nonlocal card_number
+            card_number += 1
+            calls.append(("create", card))
+            if card_number == 2:
+                continuation_started.set()
+                await release_continuation.wait()
+            return SimpleNamespace(
+                success=lambda: True,
+                data=SimpleNamespace(card_id=f"card-{card_number}"),
+            )
+
+        async def send_with_retry(**kwargs: Any) -> Any:
+            calls.append(("send", kwargs))
+            return SimpleNamespace(
+                success=lambda: True,
+                data=SimpleNamespace(message_id=f"om_card_{card_number}"),
+            )
+
+        adapter._cardkit_create = create
+        adapter._feishu_send_with_retry = send_with_retry
+
+        async def scenario() -> None:
+            origin = self._event()
+            state = await adapter._start_cardkit_turn(origin)
+            steer_task = asyncio.create_task(
+                adapter.send(
+                    "oc_chat",
+                    (
+                        "⏩ Steered into current run. Your message arrives "
+                        "after the next tool call."
+                    ),
+                    reply_to="om_steer",
+                    metadata={"thread_id": "om_root"},
+                )
+            )
+            await continuation_started.wait()
+
+            state.turn_terminal = True
+            final = await adapter.edit_message(
+                "oc_chat",
+                "om_card_1",
+                "important final answer",
+                finalize=True,
+                metadata={"thread_id": "om_root"},
+            )
+            await adapter.on_processing_complete(
+                origin,
+                self.adapter_module.ProcessingOutcome.SUCCESS,
+            )
+            release_continuation.set()
+            await steer_task
+
+            self.assertTrue(final.success)
+            self.assertTrue(state.closed)
+            self.assertEqual(state.message_id, "om_card_2")
+            self.assertEqual(state.content, "important final answer")
+            self.assertEqual(state.phase, "complete")
+
+        asyncio.run(scenario())
+
+        terminal_cards = [
+            call[1]
+            for call in calls
+            if call[0] == "update"
+            and "important final answer" in json.dumps(
+                call[1], ensure_ascii=False
+            )
+        ]
+        self.assertTrue(terminal_cards)
+
     def test_failed_steer_segment_falls_back_to_a_regular_message(self) -> None:
         """A failed continuation card does not swallow subsequent output."""
         adapter, calls = self._adapter()
@@ -482,10 +558,17 @@ class CardKitAdapterTests(unittest.TestCase):
 
         async def scenario() -> None:
             state = await adapter._start_cardkit_turn(self._event())
+            steer_ack = await adapter.send(
+                "oc_chat",
+                (
+                    "⏩ Steered into current run. Your message arrives "
+                    "after the next tool call."
+                ),
+                reply_to=steer.message_id,
+                metadata={"thread_id": "om_root"},
+            )
 
-            continuation = await adapter._start_cardkit_turn(steer)
-
-            self.assertIsNone(continuation)
+            self.assertTrue(steer_ack.success)
             self.assertFalse(state.segment_open)
             self.assertEqual(state.suspension_reason, "fallback")
             fallback = await adapter.send(
