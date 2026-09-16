@@ -28,7 +28,11 @@ _CARDKIT_IMAGE_RE = re.compile(
     r"HERMES_E2E_CARDKIT_IMAGE:([A-Za-z0-9_.:-]+)"
 )
 _TOOL_RE = re.compile(r"HERMES_E2E_TOOL:([A-Za-z0-9_.:-]+)")
+_STEER_TOOL_RE = re.compile(
+    r"HERMES_E2E_STEER_TOOL:([A-Za-z0-9_.:-]+)"
+)
 _APPROVAL_RE = re.compile(r"HERMES_E2E_APPROVAL:([A-Za-z0-9_.:-]+)")
+_QUESTION_RE = re.compile(r"HERMES_E2E_QUESTION:([A-Za-z0-9_.:-]+)")
 _MEDIA_RETURN_RE = re.compile(
     r"HERMES_E2E_MEDIA_RETURN:([A-Za-z0-9_.:-]+)"
 )
@@ -225,6 +229,17 @@ def _response_text(payload: dict[str, Any]) -> str:
             f"HISTORY={'YES' if history_present else 'NO'}"
         )
 
+    if "HERMES_E2E_EXISTING_MEDIA_CONTEXT_PROBE" in latest:
+        visible_context = "\n".join(user_texts)
+        unescaped_context = visible_context.replace("\\", "")
+        parts.append(
+            "HERMES_E2E_EXISTING_MEDIA_CONTEXT:"
+            f"ROOT={'YES' if 'HERMES_E2E_EXISTING_MEDIA_ROOT:' in unescaped_context else 'NO'};"
+            f"HISTORY={'YES' if 'HERMES_E2E_EXISTING_MEDIA_HISTORY:' in visible_context else 'NO'};"
+            f"FILE={'YES' if 'e2e-history.txt' in visible_context else 'NO'};"
+            f"VIDEO={'YES' if 'e2e-history.mp4' in visible_context else 'NO'}"
+        )
+
     if not parts:
         parts.append("HERMES_E2E_OK")
     return "\n".join(parts)
@@ -272,6 +287,12 @@ def _response_chunks(payload: dict[str, Any]) -> tuple[str, ...]:
         kind, marker, _ = tool
         if kind == "approval":
             return (f"HERMES_E2E_APPROVAL_DENIED:{marker}",)
+        if kind == "question":
+            return (f"HERMES_E2E_QUESTION_PENDING:{marker}",)
+        if kind == "steer_tool":
+            return (
+                f"HERMES_E2E_STEER_TOOL_FINAL:{marker}",
+            )
         return (
             (
                 "## Tool execution verification\n\n"
@@ -338,7 +359,9 @@ def _tool_fixture(payload: dict[str, Any]) -> tuple[str, str, bool] | None:
         text = _message_text(message)
         for candidate_kind, pattern in (
             ("tool", _TOOL_RE),
+            ("steer_tool", _STEER_TOOL_RE),
             ("approval", _APPROVAL_RE),
+            ("question", _QUESTION_RE),
         ):
             match = pattern.search(text)
             if match is not None:
@@ -349,6 +372,8 @@ def _tool_fixture(payload: dict[str, Any]) -> tuple[str, str, bool] | None:
     result_marker = (
         f"HERMES_E2E_TOOL_EXECUTED:{marker}"
         if kind == "tool"
+        else f"HERMES_E2E_STEER_TOOL_EXECUTED:{marker}"
+        if kind == "steer_tool"
         else ""
     )
     observed = any(
@@ -362,19 +387,54 @@ def _tool_fixture(payload: dict[str, Any]) -> tuple[str, str, bool] | None:
 
 def _tool_call(kind: str, marker: str) -> dict[str, Any]:
     """Build one deterministic OpenAI terminal tool call."""
-    command = (
-        f"rm -rf /opt/data/hermes-lark-e2e-approval-{marker}"
-        if kind == "approval"
-        else f"printf 'HERMES_E2E_TOOL_EXECUTED:{marker}\\n'"
-    )
+    if kind == "question":
+        function_name = "tool_call"
+        arguments = {
+            "name": "feishu_ask_user_question",
+            "arguments": {
+                "questions": [
+                    {
+                        "question": f"Which path should Hermes use? {marker}",
+                        "header": "Path",
+                        "options": [
+                            {
+                                "label": "Static review",
+                                "description": (
+                                    "Continue without external execution."
+                                ),
+                            },
+                            {
+                                "label": "Live check",
+                                "description": (
+                                    "Continue with the live environment."
+                                ),
+                            },
+                        ],
+                        "multiSelect": False,
+                    }
+                ]
+            },
+        }
+    else:
+        function_name = "terminal"
+        if kind == "approval":
+            command = f"rm -rf /opt/data/hermes-lark-e2e-approval-{marker}"
+        elif kind == "steer_tool":
+            command = (
+                "sleep 8; "
+                f"printf 'HERMES_E2E_STEER_TOOL_EXECUTED:{marker}\\n'"
+            )
+        else:
+            command = f"printf 'HERMES_E2E_TOOL_EXECUTED:{marker}\\n'"
+        arguments = {"command": command}
     return {
         "index": 0,
         "id": f"call_{uuid.uuid5(uuid.NAMESPACE_URL, marker).hex}",
         "type": "function",
         "function": {
-            "name": "terminal",
+            "name": function_name,
             "arguments": json.dumps(
-                {"command": command},
+                arguments,
                 separators=(",", ":"),
             ),
         },
@@ -505,6 +565,31 @@ class _Handler(BaseHTTPRequestHandler):
             self.end_headers()
             if pending_tool_marker:
                 chunks = [
+                    *(
+                        [
+                            {
+                                "id": completion_id,
+                                "object": "chat.completion.chunk",
+                                "created": created,
+                                "model": model,
+                                "choices": [
+                                    {
+                                        "index": 0,
+                                        "delta": {
+                                            "role": "assistant",
+                                            "content": (
+                                                "HERMES_E2E_QUESTION_PARTIAL:"
+                                                f"{pending_tool_marker}"
+                                            ),
+                                        },
+                                        "finish_reason": None,
+                                    }
+                                ],
+                            }
+                        ]
+                        if pending_tool_kind == "question"
+                        else []
+                    ),
                     {
                         "id": completion_id,
                         "object": "chat.completion.chunk",
@@ -514,7 +599,11 @@ class _Handler(BaseHTTPRequestHandler):
                             {
                                 "index": 0,
                                 "delta": {
-                                    "role": "assistant",
+                                    **(
+                                        {"role": "assistant"}
+                                        if pending_tool_kind != "question"
+                                        else {}
+                                    ),
                                     "reasoning_content": (
                                         "HERMES_E2E_REASONING:"
                                         f"{pending_tool_marker}"

@@ -23,6 +23,10 @@ and the project intends to follow [Semantic Versioning](https://semver.org/).
 - Preserve physical thread ordering after an accepted Steer or a blocking
   interaction by freezing the prior CardKit segment and continuing below the
   timeline boundary.
+- Put the answer before lifecycle and collapsed tool details on completed
+  CardKit cards, and use the answer for the Feishu chat-list preview.
+- Cover imported thread media, repeated Steer boundaries, tool completion,
+  questions, approvals, media replies, and cancellation in live-tenant E2E.
 
 ## [1.0.0] - 2026-08-04
 

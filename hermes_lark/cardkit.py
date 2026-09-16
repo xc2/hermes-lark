@@ -627,6 +627,18 @@ def _build_lifecycle_card(
         content if streaming else sanitize_terminal_cardkit_markdown(content)
     )
     elements: list[dict[str, Any]] = []
+    content_element = {
+        "tag": "markdown",
+        "content": visible_content,
+        "text_align": "left",
+        "text_size": "normal_v2",
+        "margin": "0px 0px 0px 0px",
+        "element_id": STREAMING_ELEMENT_ID,
+    }
+    terminal_summary = ""
+    if not streaming and visible_content.strip():
+        terminal_summary = re.sub(r"\s+", " ", visible_content).strip()[:200]
+        elements.append(content_element)
     if lifecycle_content:
         elements.append(
             {
@@ -658,16 +670,8 @@ def _build_lifecycle_card(
                 "element_id": PROGRESS_ELEMENT_ID,
             }
         )
-    elements.append(
-        {
-            "tag": "markdown",
-            "content": visible_content,
-            "text_align": "left",
-            "text_size": "normal_v2",
-            "margin": "0px 0px 0px 0px",
-            "element_id": STREAMING_ELEMENT_ID,
-        }
-    )
+    if streaming or not visible_content.strip():
+        elements.append(content_element)
     if streaming:
         elements.append(
             {
@@ -690,13 +694,13 @@ def _build_lifecycle_card(
             "locales": ["zh_cn", "en_us"],
             "summary": (
                 {
-                    "content": summary,
+                    "content": terminal_summary or summary,
                     "i18n_content": {
-                        "zh_cn": summary_zh,
-                        "en_us": summary,
+                        "zh_cn": terminal_summary or summary_zh,
+                        "en_us": terminal_summary or summary,
                     },
                 }
-                if summary or summary_zh
+                if terminal_summary or summary or summary_zh
                 else {"content": ""}
             ),
         },

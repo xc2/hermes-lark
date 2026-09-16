@@ -4683,18 +4683,25 @@ class FeishuAdapter(BasePlatformAdapter):
     ) -> SendResult:
         """Close streaming mode and replace one card with its terminal state."""
         from .cardkit import (
+            CARDKIT_EMPTY_REPLY_FALLBACK,
             CARDKIT_IMAGE_RESOLUTION_TIMEOUT_SECONDS,
             build_complete_card,
             build_error_card,
             build_stopped_card,
+            should_buffer_silent_reply,
             terminal_cardkit_content,
         )
 
         async with state.lock:
             if getattr(state, "segment_transitioning", False):
                 raw_terminal_content = str(content or state.content or "")
-                if stopped and not raw_terminal_content.strip():
-                    raw_terminal_content = "Aborted."
+                if stopped and (
+                    not raw_terminal_content.strip()
+                    or should_buffer_silent_reply(raw_terminal_content)
+                    or raw_terminal_content.strip()
+                    == CARDKIT_EMPTY_REPLY_FALLBACK
+                ):
+                    raw_terminal_content = "Stopped."
                 prior_terminal = getattr(state, "deferred_terminal", None)
                 if prior_terminal is not None:
                     prior_content, prior_error, prior_stopped = prior_terminal
@@ -4742,8 +4749,12 @@ class FeishuAdapter(BasePlatformAdapter):
                 return SendResult(success=True, message_id=state.message_id)
 
             raw_terminal_content = str(content or state.content or "")
-            if stopped and not raw_terminal_content.strip():
-                raw_terminal_content = "Aborted."
+            if stopped and (
+                not raw_terminal_content.strip()
+                or should_buffer_silent_reply(raw_terminal_content)
+                or raw_terminal_content.strip() == CARDKIT_EMPTY_REPLY_FALLBACK
+            ):
+                raw_terminal_content = "Stopped."
             terminal_content = terminal_cardkit_content(
                 raw_terminal_content,
                 visible_fallback=state.last_flushed_content,

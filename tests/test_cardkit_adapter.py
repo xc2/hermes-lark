@@ -162,8 +162,8 @@ class CardKitAdapterTests(unittest.TestCase):
         )
         self.assertNotIn("loading", json.dumps(update_call[1], ensure_ascii=False))
         self.assertEqual(
-            update_call[1]["config"]["summary"],
-            {"content": ""},
+            update_call[1]["config"]["summary"]["content"],
+            "first second final",
         )
         self.assertFalse(
             any(
@@ -2809,6 +2809,34 @@ class CardKitAdapterTests(unittest.TestCase):
         terminal_card = [call for call in calls if call[0] == "update"][-1][1]
         self.assertIn("Stopped", json.dumps(terminal_card, ensure_ascii=False))
         self.assertFalse(terminal_card["config"]["streaming_mode"])
+
+    def test_stopped_empty_reply_fallback_uses_stopped_visible_content(self) -> None:
+        """A flushed fallback must not make a cancelled turn look complete."""
+        adapter, calls = self._adapter()
+
+        async def scenario() -> None:
+            state = await adapter._start_cardkit_turn(self._event())
+            state.content = "Done."
+            state.last_flushed_content = "Done."
+            result = await adapter._finalize_cardkit(
+                state,
+                state.content,
+                stopped=True,
+            )
+            self.assertTrue(result.success)
+            self.assertEqual(state.content, "Stopped.")
+
+        asyncio.run(scenario())
+
+        terminal_card = [call for call in calls if call[0] == "update"][-1][1]
+        self.assertEqual(
+            terminal_card["config"]["summary"]["content"],
+            "Stopped.",
+        )
+        self.assertEqual(
+            terminal_card["body"]["elements"][0]["content"],
+            "Stopped.",
+        )
 
 
 if __name__ == "__main__":

@@ -107,6 +107,7 @@ class E2EGatewayConfigTests(unittest.TestCase):
         self.assertEqual(
             configured["display"],
             {
+                "busy_input_mode": "steer",
                 "platforms": {
                     "feishu": {
                         "streaming": True,

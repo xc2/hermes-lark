@@ -200,8 +200,8 @@ replyMode:
 With `replyMode: auto`, DMs use CardKit and groups use static replies. During a
 CardKit turn:
 
-- Progress and tool status update the latest card; the final answer replaces
-  that progress.
+- Progress and tool status update the latest card; completed cards and chat-list
+  previews lead with the final answer.
 - An accepted Steer, blocking interaction, or native artifact freezes the
   current card and continues below the timeline boundary.
 - If a continuation card cannot be created, output falls back to an ordinary

@@ -33,6 +33,41 @@ _TINY_PNG_BYTES = base64.b64decode(
     "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk"
     "+A8AAQUBAScY42YAAAAASUVORK5CYII="
 )
+_TINY_MP4_BYTES = base64.b64decode(
+    "AAAAIGZ0eXBpc29tAAACAGlzb21pc28yYXZjMW1wNDEAAAMUbW9vdgAAAGxtdmhk"
+    "AAAAAAAAAAAAAAAAAAAD6AAAACgAAQAAAQAAAAAAAAAAAAAAAAEAAAAAAAAAAAAA"
+    "AAAAAAABAAAAAAAAAAAAAAAAAABAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+    "AAAAAgAAAj90cmFrAAAAXHRraGQAAAADAAAAAAAAAAAAAAABAAAAAAAAACgAAAAA"
+    "AAAAAAAAAAAAAAEAAAAAAAAAAAAAAAAAAAABAAAAAAAAAAAAAAAAAABAAAAAABAA"
+    "AAAQAAAAAAAkZWR0cwAAABxlbHN0AAAAAAAAAAEAAAAoAAAAAAABAAAAAAG3bWRp"
+    "YQAAACBtZGhkAAAAAAAAAAAAAAAAAAAyAAAAAgBVxAAAAAAALWhkbHIAAAAAAAAA"
+    "AHZpZGUAAAAAAAAAAAAAAABWaWRlb0hhbmRsZXIAAAABYm1pbmYAAAAUdm1oZAAA"
+    "AAEAAAAAAAAAAAAAACRkaW5mAAAAHGRyZWYAAAAAAAAAAQAAAAx1cmwgAAAAAQAA"
+    "ASJzdGJsAAAAvnN0c2QAAAAAAAAAAQAAAK5hdmMxAAAAAAAAAAEAAAAAAAAAAAAA"
+    "AAAAAAAAABAAEABIAAAASAAAAAAAAAABFExhdmM2My4xLjEwMSBsaWJ4MjY0AAAA"
+    "AAAAAAAAAAAAGP//AAAANGF2Y0MBZAAK/+EAF2dkAAqs2V7ARAAAAwAEAAADAMg8"
+    "SJZYAQAGaOvjyyLA/fj4AAAAABBwYXNwAAAAAQAAAAEAAAAUYnRydAAAAAAAAino"
+    "AAAAAAAAABhzdHRzAAAAAAAAAAEAAAABAAACAAAAABxzdHNjAAAAAAAAAAEAAAAB"
+    "AAAAAQAAAAEAAAAUc3RzegAAAAAAAALFAAAAAQAAABRzdGNvAAAAAAAAAAEAAANE"
+    "AAAAYXVkdGEAAABZbWV0YQAAAAAAAAAhaGRscgAAAAAAAAAAbWRpcmFwcGwAAAAA"
+    "AAAAAAAAAAAsaWxzdAAAACSpdG9vAAAAHGRhdGEAAAABAAAAAExhdmY2My4xLjEw"
+    "MQAAAAhmcmVlAAACzW1kYXQAAAKuBgX//6rcRem95tlIt5Ys2CDZI+7veDI2NCAt"
+    "IGNvcmUgMTY1IHIzMjIyIGIzNTYwNWEgLSBILjI2NC9NUEVHLTQgQVZDIGNvZGVj"
+    "IC0gQ29weWxlZnQgMjAwMy0yMDI1IC0gaHR0cDovL3d3dy52aWRlb2xhbi5vcmcv"
+    "eDI2NC5odG1sIC0gb3B0aW9uczogY2FiYWM9MSByZWY9MyBkZWJsb2NrPTE6MDow"
+    "IGFuYWx5c2U9MHgzOjB4MTEzIG1lPWhleCBzdWJtZT03IHBzeT0xIHBzeV9yZD0x"
+    "LjAwOjAuMDAgbWl4ZWRfcmVmPTEgbWVfcmFuZ2U9MTYgY2hyb21hX21lPTEgdHJl"
+    "bGxpcz0xIDh4OGRjdD0xIGNxbT0wIGRlYWR6b25lPTIxLDExIGZhc3RfcHNraXA9"
+    "MSBjaHJvbWFfcXBfb2Zmc2V0PS0yIHRocmVhZHM9MSBsb29rYWhlYWRfdGhyZWFk"
+    "cz0xIHNsaWNlZF90aHJlYWRzPTAgbnI9MCBkZWNpbWF0ZT0xIGludGVybGFjZWQ9"
+    "MCBibHVyYXlfY29tcGF0PTAgY29uc3RyYWluZWRfaW50cmE9MCBiZnJhbWVzPTMg"
+    "Yl9weXJhbWlkPTIgYl9hZGFwdD0xIGJfYmlhcz0wIGRpcmVjdD0xIHdlaWdodGI9"
+    "MSBvcGVuX2dvcD0wIHdlaWdodHA9MiBrZXlpbnQ9MjUwIGtleWludF9taW49MjUg"
+    "c2NlbmVjdXQ9NDAgaW50cmFfcmVmcmVzaD0wIHJjX2xvb2thaGVhZD00MCByYz1j"
+    "cmYgbWJ0cmVlPTEgY3JmPTIzLjAgcWNvbXA9MC42MCBxcG1pbj0wIHFwbWF4PTY5"
+    "IHFwc3RlcD00IGlwX3JhdGlvPTEuNDAgYXE9MToxLjAwAIAAAAAPZYiEACv//vZz"
+    "fAprbbGB"
+)
 
 
 class FeishuApiError(AssertionError):
@@ -224,12 +259,20 @@ class FeishuOpenApi:
             raise FeishuApiError("upload E2E image response omitted data.image_key")
         return image_key
 
-    def upload_file(self, content: bytes, file_name: str) -> str:
+    def upload_file(
+        self,
+        content: bytes,
+        file_name: str,
+        *,
+        file_type: str = "stream",
+    ) -> str:
         """Upload one generic message file through the app-owned resource API."""
+        if file_type not in {"stream", "mp4"}:
+            raise AssertionError("file_type must be stream or mp4")
         response = self._request_multipart(
             "/open-apis/im/v1/files",
             token=self._tenant_access_token,
-            fields={"file_type": "stream", "file_name": file_name},
+            fields={"file_type": file_type, "file_name": file_name},
             file_field="file",
             file_name=file_name,
             content_type=mimetypes.guess_type(file_name)[0]
@@ -271,20 +314,59 @@ class FeishuOpenApi:
         )
         return self._message_from_write(response, f"create {msg_type} message")
 
+    def create_user_post_with_image(
+        self,
+        chat_id: str,
+        *,
+        text: str,
+        image_key: str,
+    ) -> dict[str, Any]:
+        """Send one top-level rich-text message containing an inline image."""
+        response = self._request(
+            "POST",
+            "/open-apis/im/v1/messages",
+            token=self._require_user_token(),
+            query={"receive_id_type": "chat_id"},
+            body={
+                "receive_id": chat_id,
+                "msg_type": "post",
+                "content": json.dumps(
+                    {
+                        "zh_cn": {
+                            "title": "",
+                            "content": [
+                                [{"tag": "text", "text": text}],
+                                [{"tag": "img", "image_key": image_key}],
+                            ],
+                        }
+                    },
+                    ensure_ascii=False,
+                ),
+                "uuid": str(uuid.uuid4()),
+            },
+        )
+        return self._message_from_write(response, "create post with image")
+
     def reply_user_media_in_thread(
         self,
         root_message_id: str,
         *,
         msg_type: str,
         resource_key: str,
+        cover_image_key: str = "",
     ) -> dict[str, Any]:
         """Reply with one image or file as the test user in a native thread."""
         if msg_type == "image":
             content = {"image_key": resource_key}
         elif msg_type == "file":
             content = {"file_key": resource_key}
+        elif msg_type == "media" and cover_image_key:
+            content = {
+                "file_key": resource_key,
+                "image_key": cover_image_key,
+            }
         else:
-            raise AssertionError("msg_type must be image or file")
+            raise AssertionError("msg_type must be image, file, or covered media")
         response = self._request(
             "POST",
             (
@@ -983,6 +1065,11 @@ def _cardkit_trace_state(entry: dict[str, Any]) -> str:
     return str(entry.get("state") or entry.get("status") or "")
 
 
+def _terminal_card_summary(content: str) -> str:
+    """Return the answer-led preview expected from a closed CardKit card."""
+    return re.sub(r"\s+", " ", content).strip()[:200]
+
+
 def _positive_float_env(name: str, default: float) -> float:
     """Read one finite positive duration from the environment."""
     raw = os.environ.get(name)
@@ -1506,6 +1593,45 @@ class LiveThreadModelTests(unittest.TestCase):
             )
             self.assertEqual(downloaded_image, _TINY_PNG_BYTES)
             self.assertEqual(downloaded_file, file_bytes)
+
+            def observe_completed_card(
+                entries: list[dict[str, Any]],
+            ) -> dict[str, Any] | None:
+                return next(
+                    (
+                        entry
+                        for entry in entries
+                        if entry.get("operation") == "update"
+                        and entry.get("ok") is True
+                        and _cardkit_trace_state(entry) == "complete"
+                        and f"HERMES_E2E_MEDIA_RETURNED:{marker}"
+                        in _cardkit_trace_text(entry)
+                    ),
+                    None,
+                )
+
+            completed = self._wait_for_cardkit_trace(
+                root_id=root_id,
+                thread_id=thread_id,
+                predicate=observe_completed_card,
+                description=f"completed outbound-media card for {root_id}",
+            )
+            final_card = _cardkit_trace_card(completed)
+            final_elements = final_card.get("body", {}).get("elements", [])
+            self.assertTrue(final_elements)
+            self.assertEqual(
+                final_elements[0].get("element_id"),
+                "streaming_content",
+            )
+            self.assertEqual(
+                str(
+                    final_card.get("config", {})
+                    .get("summary", {})
+                    .get("content")
+                    or ""
+                ),
+                f"HERMES_E2E_MEDIA_RETURNED:{marker}",
+            )
             self._wait_for_persisted_session(
                 chat_id=self.dm_chat_id,
                 chat_type="dm",
@@ -1764,13 +1890,21 @@ class LiveThreadModelTests(unittest.TestCase):
         self.assertIsInstance(final_config, dict)
         self.assertIs(final_config.get("streaming_mode"), False)
         self.assertNotIn("loading_icon", _cardkit_trace_text(updated))
-        self.assertEqual(final_config.get("summary"), {"content": ""})
+        final_summary = final_config.get("summary")
+        self.assertIsInstance(final_summary, dict)
+        self.assertEqual(
+            str(final_summary.get("content") or ""),
+            _terminal_card_summary(final_content_text),
+        )
         final_body = final_card.get("body")
         self.assertIsInstance(final_body, dict)
+        final_elements = final_body.get("elements", [])
+        self.assertTrue(final_elements)
+        self.assertEqual(final_elements[0].get("element_id"), "streaming_content")
         self.assertFalse(
             any(
                 element.get("element_id") == "lifecycle_status"
-                for element in final_body.get("elements", [])
+                for element in final_elements
                 if isinstance(element, dict)
             )
         )
@@ -1791,6 +1925,182 @@ class LiveThreadModelTests(unittest.TestCase):
             root_id=root_id,
             transcript_markers=(marker, final_marker),
         )
+
+    def test_dm_repeated_steer_moves_stream_below_each_user_message(self) -> None:
+        """Every accepted Steer freezes its card and moves later output below."""
+        marker = self._marker("DM-REPEATED-STEER")
+        stage_1 = f"HERMES_E2E_STREAM_STAGE_1:{marker}"
+        final_marker = f"HERMES_E2E_STREAM_FINAL:{marker}"
+        root = self.api.create_text_message(
+            self.dm_chat_id,
+            "\n".join(
+                (
+                    f"HERMES_E2E_STREAM:{marker}",
+                    "Stream the answer while I refine the request.",
+                )
+            ),
+        )
+        root_id = str(root["message_id"])
+        after_ms = _message_time_ms(root)
+
+        try:
+            first_card, thread_id = self._wait_for_cardkit_message(
+                root_id=root_id,
+                after_ms=after_ms,
+            )
+            first_card_id = str(first_card["message_id"])
+
+            def observe_stage_one(
+                entries: list[dict[str, Any]],
+            ) -> dict[str, Any] | None:
+                return next(
+                    (
+                        entry
+                        for entry in entries
+                        if entry.get("operation") == "content"
+                        and entry.get("ok") is True
+                        and entry.get("message_id") == first_card_id
+                        and stage_1 in _cardkit_trace_text(entry)
+                    ),
+                    None,
+                )
+
+            self._wait_for_cardkit_trace(
+                root_id=root_id,
+                thread_id=thread_id,
+                predicate=observe_stage_one,
+                description=f"first visible stream delta for {root_id}",
+            )
+
+            first_steer = self.api.reply_text_in_thread(
+                root_id,
+                f"First steer {marker}: keep this analysis only.",
+            )
+            first_steer_id = str(first_steer["message_id"])
+
+            def observe_first_steer(
+                entries: list[dict[str, Any]],
+            ) -> str | None:
+                creates = [
+                    entry
+                    for entry in entries
+                    if entry.get("operation") == "create"
+                    and entry.get("ok") is True
+                ]
+                continued = any(
+                    entry.get("operation") == "update"
+                    and entry.get("ok") is True
+                    and entry.get("message_id") == first_card_id
+                    and _cardkit_trace_state(entry) == "continued"
+                    for entry in entries
+                )
+                if len(creates) < 2 or not continued:
+                    return None
+                return str(creates[1].get("message_id") or "")
+
+            second_card_id = self._wait_for_cardkit_trace(
+                root_id=root_id,
+                thread_id=thread_id,
+                predicate=observe_first_steer,
+                description=f"first Steer continuation for {root_id}",
+            )
+            self.assertTrue(second_card_id)
+
+            second_steer = self.api.reply_text_in_thread(
+                root_id,
+                f"Second steer {marker}: presentation layer only.",
+            )
+            second_steer_id = str(second_steer["message_id"])
+
+            def observe_second_steer(
+                entries: list[dict[str, Any]],
+            ) -> str | None:
+                creates = [
+                    entry
+                    for entry in entries
+                    if entry.get("operation") == "create"
+                    and entry.get("ok") is True
+                ]
+                second_continued = any(
+                    entry.get("operation") == "update"
+                    and entry.get("ok") is True
+                    and entry.get("message_id") == second_card_id
+                    and _cardkit_trace_state(entry) == "continued"
+                    for entry in entries
+                )
+                if len(creates) < 3 or not second_continued:
+                    return None
+                return str(creates[2].get("message_id") or "")
+
+            third_card_id = self._wait_for_cardkit_trace(
+                root_id=root_id,
+                thread_id=thread_id,
+                predicate=observe_second_steer,
+                description=f"debounced repeated Steer continuation for {root_id}",
+            )
+            self.assertTrue(third_card_id)
+
+            self._advance_model_stream(marker, 2)
+            self._advance_model_stream(marker, 3)
+
+            def observe_final(
+                entries: list[dict[str, Any]],
+            ) -> tuple[dict[str, Any], list[dict[str, Any]]] | None:
+                completed = next(
+                    (
+                        entry
+                        for entry in entries
+                        if entry.get("operation") == "update"
+                        and entry.get("ok") is True
+                        and entry.get("message_id") == third_card_id
+                        and _cardkit_trace_state(entry) == "complete"
+                    ),
+                    None,
+                )
+                return (completed, entries) if completed is not None else None
+
+            completed, entries = self._wait_for_cardkit_trace(
+                root_id=root_id,
+                thread_id=thread_id,
+                predicate=observe_final,
+                description=f"final answer on newest Steer segment for {root_id}",
+            )
+        finally:
+            self._advance_model_stream(marker, 2, required=False)
+            self._advance_model_stream(marker, 3, required=False)
+
+        self.assertIn(final_marker, _cardkit_trace_text(completed))
+        for frozen_id in (first_card_id, second_card_id):
+            frozen_entries = [
+                entry
+                for entry in entries
+                if str(entry.get("message_id") or "") == frozen_id
+            ]
+            self.assertTrue(frozen_entries)
+            self.assertEqual(_cardkit_trace_state(frozen_entries[-1]), "continued")
+            self.assertNotIn(final_marker, _cardkit_trace_text(frozen_entries[-1]))
+
+        final_card = _cardkit_trace_card(completed)
+        final_elements = final_card.get("body", {}).get("elements", [])
+        self.assertTrue(final_elements)
+        self.assertEqual(final_elements[0].get("element_id"), "streaming_content")
+        self.assertEqual(
+            str(final_card.get("config", {}).get("summary", {}).get("content") or ""),
+            _terminal_card_summary(str(completed.get("content") or "")),
+        )
+
+        messages = self.api.list_messages(
+            container_type="thread",
+            container_id=thread_id,
+        )
+        positions = {
+            str(message.get("message_id") or ""): index
+            for index, message in enumerate(messages)
+        }
+        self.assertLess(positions[first_card_id], positions[first_steer_id])
+        self.assertLess(positions[first_steer_id], positions[second_card_id])
+        self.assertLess(positions[second_card_id], positions[second_steer_id])
+        self.assertLess(positions[second_steer_id], positions[third_card_id])
 
     def test_dm_remote_markdown_image_reflushes_as_feishu_key(self) -> None:
         """A remote Markdown image appears only after its Feishu upload succeeds."""
@@ -1981,6 +2291,24 @@ class LiveThreadModelTests(unittest.TestCase):
         )
         self.assertIn("terminal", tool_trace.lower())
         self.assertIn(final_marker, _cardkit_trace_text(completed))
+        completed_card = _cardkit_trace_card(completed)
+        completed_elements = completed_card.get("body", {}).get("elements", [])
+        self.assertTrue(completed_elements)
+        self.assertEqual(
+            completed_elements[0].get("element_id"),
+            "streaming_content",
+        )
+        self.assertEqual(completed_elements[1].get("tag"), "collapsible_panel")
+        self.assertIs(completed_elements[1].get("expanded"), False)
+        self.assertEqual(
+            str(
+                completed_card.get("config", {})
+                .get("summary", {})
+                .get("content")
+                or ""
+            ),
+            _terminal_card_summary(str(completed.get("content") or "")),
+        )
 
         session = self._wait_for_persisted_session(
             chat_id=self.dm_chat_id,
@@ -2044,6 +2372,251 @@ class LiveThreadModelTests(unittest.TestCase):
             after_ms=after_ms,
         )
 
+    def test_dm_tool_completion_after_steer_updates_the_newest_card(self) -> None:
+        """A tool completed after Steer updates only the continuation segment."""
+        marker = self._marker("DM-TOOL-STEER")
+        final_marker = f"HERMES_E2E_STEER_TOOL_FINAL:{marker}"
+        root = self.api.create_text_message(
+            self.dm_chat_id,
+            "\n".join(
+                (
+                    f"HERMES_E2E_STEER_TOOL:{marker}",
+                    "Run the held tool while I refine the request.",
+                )
+            ),
+        )
+        root_id = str(root["message_id"])
+        after_ms = _message_time_ms(root)
+
+        first_card, thread_id = self._wait_for_cardkit_message(
+            root_id=root_id,
+            after_ms=after_ms,
+        )
+        first_card_id = str(first_card["message_id"])
+
+        def observe_running(
+            entries: list[dict[str, Any]],
+        ) -> dict[str, Any] | None:
+            return next(
+                (
+                    entry
+                    for entry in entries
+                    if entry.get("ok") is True
+                    and entry.get("message_id") == first_card_id
+                    and _cardkit_trace_state(entry) == "tool_running"
+                ),
+                None,
+            )
+
+        self._wait_for_cardkit_trace(
+            root_id=root_id,
+            thread_id=thread_id,
+            predicate=observe_running,
+            description=f"held terminal tool for {root_id}",
+        )
+        steer = self.api.reply_text_in_thread(
+            root_id,
+            f"Steer {marker}: report the result without changing interfaces.",
+        )
+        steer_id = str(steer["message_id"])
+
+        def observe_continuation(
+            entries: list[dict[str, Any]],
+        ) -> str | None:
+            creates = [
+                entry
+                for entry in entries
+                if entry.get("operation") == "create"
+                and entry.get("ok") is True
+            ]
+            continued = any(
+                entry.get("operation") == "update"
+                and entry.get("ok") is True
+                and entry.get("message_id") == first_card_id
+                and _cardkit_trace_state(entry) == "continued"
+                for entry in entries
+            )
+            if len(creates) < 2 or not continued:
+                return None
+            return str(creates[1].get("message_id") or "")
+
+        second_card_id = self._wait_for_cardkit_trace(
+            root_id=root_id,
+            thread_id=thread_id,
+            predicate=observe_continuation,
+            description=f"tool Steer continuation for {root_id}",
+        )
+        self.assertTrue(second_card_id)
+
+        def observe_completed(
+            entries: list[dict[str, Any]],
+        ) -> tuple[dict[str, Any], list[dict[str, Any]]] | None:
+            new_tool_complete = any(
+                entry.get("ok") is True
+                and entry.get("message_id") == second_card_id
+                and _cardkit_trace_state(entry) == "tool_complete"
+                for entry in entries
+            )
+            completed = next(
+                (
+                    entry
+                    for entry in entries
+                    if entry.get("operation") == "update"
+                    and entry.get("ok") is True
+                    and entry.get("message_id") == second_card_id
+                    and _cardkit_trace_state(entry) == "complete"
+                    and final_marker in _cardkit_trace_text(entry)
+                ),
+                None,
+            )
+            if not new_tool_complete or completed is None:
+                return None
+            return completed, entries
+
+        completed, entries = self._wait_for_cardkit_trace(
+            root_id=root_id,
+            thread_id=thread_id,
+            predicate=observe_completed,
+            description=f"post-Steer tool completion for {root_id}",
+        )
+
+        old_entries = [
+            entry
+            for entry in entries
+            if str(entry.get("message_id") or "") == first_card_id
+        ]
+        self.assertEqual(_cardkit_trace_state(old_entries[-1]), "continued")
+        self.assertNotIn(final_marker, _cardkit_trace_text(old_entries[-1]))
+        final_card = _cardkit_trace_card(completed)
+        final_elements = final_card.get("body", {}).get("elements", [])
+        self.assertEqual(final_elements[0].get("element_id"), "streaming_content")
+        self.assertEqual(final_elements[1].get("tag"), "collapsible_panel")
+        self.assertIs(final_elements[1].get("expanded"), False)
+        self.assertEqual(
+            str(final_card.get("config", {}).get("summary", {}).get("content") or ""),
+            _terminal_card_summary(str(completed.get("content") or "")),
+        )
+
+        messages = self.api.list_messages(
+            container_type="thread",
+            container_id=thread_id,
+        )
+        positions = {
+            str(message.get("message_id") or ""): index
+            for index, message in enumerate(messages)
+        }
+        self.assertLess(positions[first_card_id], positions[steer_id])
+        self.assertLess(positions[steer_id], positions[second_card_id])
+
+    def test_dm_question_freezes_stream_above_the_interaction_card(self) -> None:
+        """A real question card becomes the visible action-required boundary."""
+        marker = self._marker("DM-QUESTION")
+        partial_marker = f"HERMES_E2E_QUESTION_PARTIAL:{marker}"
+        root = self.api.create_text_message(
+            self.dm_chat_id,
+            "\n".join(
+                (
+                    f"HERMES_E2E_QUESTION:{marker}",
+                    "Ask which verification path to use.",
+                )
+            ),
+        )
+        root_id = str(root["message_id"])
+        after_ms = _message_time_ms(root)
+        first_card, thread_id = self._wait_for_cardkit_message(
+            root_id=root_id,
+            after_ms=after_ms,
+        )
+        first_card_id = str(first_card["message_id"])
+
+        def observe_question() -> dict[str, Any] | None:
+            matching = [
+                message
+                for message in self.api.list_messages(
+                    container_type="thread",
+                    container_id=thread_id,
+                )
+                if self._is_bot_message(message)
+                and str(message.get("root_id") or "") == root_id
+                and _message_time_ms(message) >= after_ms
+                and message.get("msg_type") == "interactive"
+                and marker in _message_text(message)
+                and "Which path should Hermes use?" in _message_text(message)
+            ]
+            if len(matching) > 1:
+                raise AssertionError("question fixture emitted duplicate cards")
+            return matching[0] if matching else None
+
+        question = _wait_until(
+            observe_question,
+            timeout_seconds=self.timeout_seconds,
+            description=f"question card for {root_id}",
+            interval_seconds=0.2,
+        )
+        question_id = str(question["message_id"])
+        self._assert_reply_is_in_root_thread(question, root_id, thread_id)
+
+        def observe_waiting(
+            entries: list[dict[str, Any]],
+        ) -> tuple[dict[str, Any], list[dict[str, Any]]] | None:
+            waiting = next(
+                (
+                    entry
+                    for entry in entries
+                    if entry.get("operation") == "update"
+                    and entry.get("ok") is True
+                    and entry.get("message_id") == first_card_id
+                    and _cardkit_trace_state(entry) == "waiting"
+                    and partial_marker in _cardkit_trace_text(entry)
+                ),
+                None,
+            )
+            return (waiting, entries) if waiting is not None else None
+
+        waiting, entries = self._wait_for_cardkit_trace(
+            root_id=root_id,
+            thread_id=thread_id,
+            predicate=observe_waiting,
+            description=f"question boundary on the original card for {root_id}",
+        )
+        waiting_card = _cardkit_trace_card(waiting)
+        waiting_elements = waiting_card.get("body", {}).get("elements", [])
+        self.assertTrue(waiting_elements)
+        self.assertEqual(waiting_elements[0].get("element_id"), "streaming_content")
+        self.assertEqual(waiting_elements[1].get("element_id"), "lifecycle_status")
+        self.assertIn(
+            partial_marker,
+            str(waiting_card.get("config", {}).get("summary", {}).get("content") or ""),
+        )
+        self.assertEqual(
+            len(
+                [
+                    entry
+                    for entry in entries
+                    if entry.get("operation") == "create"
+                    and entry.get("ok") is True
+                ]
+            ),
+            1,
+        )
+        self.assertFalse(
+            any(
+                _cardkit_trace_state(entry) == "complete"
+                for entry in entries
+                if entry.get("message_id") == first_card_id
+            )
+        )
+
+        messages = self.api.list_messages(
+            container_type="thread",
+            container_id=thread_id,
+        )
+        positions = {
+            str(message.get("message_id") or ""): index
+            for index, message in enumerate(messages)
+        }
+        self.assertLess(positions[first_card_id], positions[question_id])
+
     def test_dm_sensitive_tool_approval_card_is_denied_in_thread(self) -> None:
         """A real approval card blocks execution until same-thread /deny."""
         marker = self._marker("DM-APPROVAL")
@@ -2062,10 +2635,11 @@ class LiveThreadModelTests(unittest.TestCase):
             )
             root_id = str(root["message_id"])
             after_ms = _message_time_ms(root)
-            _, thread_id = self._wait_for_cardkit_message(
+            first_card, thread_id = self._wait_for_cardkit_message(
                 root_id=root_id,
                 after_ms=after_ms,
             )
+            first_card_id = str(first_card["message_id"])
 
             def observe_approval() -> dict[str, Any] | None:
                 messages = self.api.list_messages(
@@ -2092,6 +2666,7 @@ class LiveThreadModelTests(unittest.TestCase):
                 description=f"sensitive-command approval card for {root_id}",
                 interval_seconds=0.2,
             )
+            approval_id = str(approval["message_id"])
             self._assert_reply_is_in_root_thread(approval, root_id, thread_id)
             approval_card = _message_body_content(approval)
             self.assertIsInstance(approval_card, dict)
@@ -2126,6 +2701,35 @@ class LiveThreadModelTests(unittest.TestCase):
                 "agent completed before the user resolved its approval",
             )
 
+            def observe_waiting(
+                entries: list[dict[str, Any]],
+            ) -> dict[str, Any] | None:
+                return next(
+                    (
+                        entry
+                        for entry in entries
+                        if entry.get("operation") == "update"
+                        and entry.get("ok") is True
+                        and entry.get("message_id") == first_card_id
+                        and _cardkit_trace_state(entry) == "waiting"
+                    ),
+                    None,
+                )
+
+            waiting = self._wait_for_cardkit_trace(
+                root_id=root_id,
+                thread_id=thread_id,
+                predicate=observe_waiting,
+                description=f"approval waiting boundary for {root_id}",
+            )
+            waiting_card = _cardkit_trace_card(waiting)
+            waiting_elements = waiting_card.get("body", {}).get("elements", [])
+            if str(waiting.get("content") or "").strip():
+                self.assertEqual(
+                    waiting_elements[0].get("element_id"),
+                    "streaming_content",
+                )
+
             denial = self.api.reply_text_in_thread(root_id, "/deny")
 
             def observe_denied(
@@ -2151,10 +2755,50 @@ class LiveThreadModelTests(unittest.TestCase):
             )
             self.assertGreaterEqual(_message_time_ms(denial), after_ms)
             self.assertIn(final_marker, _cardkit_trace_text(completed))
+            completed_message_id = str(completed.get("message_id") or "")
+            self.assertTrue(completed_message_id)
+            self.assertNotEqual(completed_message_id, first_card_id)
+            completed_card = _cardkit_trace_card(completed)
+            completed_elements = completed_card.get("body", {}).get("elements", [])
+            self.assertTrue(completed_elements)
+            self.assertEqual(
+                completed_elements[0].get("element_id"),
+                "streaming_content",
+            )
+            self.assertIn(
+                final_marker,
+                str(
+                    completed_card.get("config", {})
+                    .get("summary", {})
+                    .get("content")
+                    or ""
+                ),
+            )
             self.assertTrue(
                 target.is_file(),
                 "denied terminal command unexpectedly removed its sentinel",
             )
+
+            entries = self._cardkit_entries(
+                root_id=root_id,
+                thread_id=thread_id,
+            )
+            old_entries = [
+                entry
+                for entry in entries
+                if str(entry.get("message_id") or "") == first_card_id
+            ]
+            self.assertEqual(_cardkit_trace_state(old_entries[-1]), "waiting")
+            messages = self.api.list_messages(
+                container_type="thread",
+                container_id=thread_id,
+            )
+            positions = {
+                str(message.get("message_id") or ""): index
+                for index, message in enumerate(messages)
+            }
+            self.assertLess(positions[first_card_id], positions[approval_id])
+            self.assertLess(positions[approval_id], positions[completed_message_id])
 
             session = self._wait_for_persisted_session(
                 chat_id=self.dm_chat_id,
@@ -2322,6 +2966,11 @@ class LiveThreadModelTests(unittest.TestCase):
 
         try:
             self._wait_for_model_delay_barrier(marker)
+            first_card, first_thread_id = self._wait_for_cardkit_message(
+                root_id=root_id,
+                after_ms=_message_time_ms(root),
+            )
+            first_card_id = str(first_card["message_id"])
             stop_message = self.api.reply_text_in_thread(root_id, "/stop")
             stop_after_ms = _message_time_ms(stop_message)
             reply, thread_id = self._wait_for_bot_reply(
@@ -2329,9 +2978,83 @@ class LiveThreadModelTests(unittest.TestCase):
                 expected_text="Stopped",
                 after_ms=stop_after_ms,
             )
+            self.assertEqual(thread_id, first_thread_id)
             self._assert_reply_is_in_root_thread(reply, root_id, thread_id)
+
+            def observe_stopped(
+                entries: list[dict[str, Any]],
+            ) -> tuple[dict[str, Any], list[dict[str, Any]]] | None:
+                stopped = next(
+                    (
+                        entry
+                        for entry in entries
+                        if entry.get("operation") == "update"
+                        and entry.get("ok") is True
+                        and entry.get("message_id") == first_card_id
+                        and _cardkit_trace_state(entry) == "stopped"
+                    ),
+                    None,
+                )
+                return (stopped, entries) if stopped is not None else None
+
+            stopped, entries = self._wait_for_cardkit_trace(
+                root_id=root_id,
+                thread_id=thread_id,
+                predicate=observe_stopped,
+                description=f"terminal stopped CardKit state for {root_id}",
+            )
+            stopped_card = _cardkit_trace_card(stopped)
+            stopped_elements = stopped_card.get("body", {}).get("elements", [])
+            self.assertTrue(stopped_elements)
+            self.assertEqual(
+                stopped_elements[0].get("element_id"),
+                "streaming_content",
+            )
+            self.assertIn(
+                "Stopped",
+                str(
+                    stopped_card.get("config", {})
+                    .get("summary", {})
+                    .get("content")
+                    or ""
+                ),
+            )
+            self.assertEqual(
+                len(
+                    [
+                        entry
+                        for entry in entries
+                        if entry.get("operation") == "create"
+                        and entry.get("ok") is True
+                    ]
+                ),
+                1,
+            )
         finally:
             self._release_model_delay_barrier(marker, required=False)
+
+        deadline = time.monotonic() + 3
+        while True:
+            settled_entries = self._cardkit_entries(
+                root_id=root_id,
+                thread_id=thread_id,
+            )
+            creates = [
+                entry
+                for entry in settled_entries
+                if entry.get("operation") == "create"
+                and entry.get("ok") is True
+            ]
+            self.assertEqual(len(creates), 1, "late completion reopened CardKit")
+            first_entries = [
+                entry
+                for entry in settled_entries
+                if str(entry.get("message_id") or "") == first_card_id
+            ]
+            self.assertEqual(_cardkit_trace_state(first_entries[-1]), "stopped")
+            if time.monotonic() >= deadline:
+                break
+            time.sleep(0.5)
 
     def test_group_requires_mention_then_keeps_active_thread(self) -> None:
         """A group root requires mention but its active thread does not."""
@@ -2400,6 +3123,130 @@ class LiveThreadModelTests(unittest.TestCase):
                 "HERMES_E2E_EXISTING_CONTEXT:ROOT=YES;HISTORY=YES",
             ),
         )
+
+    def test_existing_human_thread_first_mention_imports_mixed_media(self) -> None:
+        """First activation imports every visible image, video, file, and text."""
+        from gateway.platforms.base import (
+            get_document_cache_dir,
+            get_image_cache_dir,
+        )
+        from hermes_state import SessionDB
+
+        marker = self._marker("EXISTING-MEDIA")
+        image_key = self.api.upload_image(
+            _TINY_PNG_BYTES,
+            "e2e-history.png",
+        )
+        video_key = self.api.upload_file(
+            _TINY_MP4_BYTES,
+            "e2e-history.mp4",
+            file_type="mp4",
+        )
+        file_bytes = f"historical file marker={marker}\n".encode()
+        file_key = self.api.upload_file(file_bytes, "e2e-history.txt")
+
+        root = self.api.create_user_post_with_image(
+            self.group_chat_id,
+            text=f"HERMES_E2E_EXISTING_MEDIA_ROOT:{marker}",
+            image_key=image_key,
+        )
+        root_id = str(root["message_id"])
+        historical_image_bytes, _ = self.api.download_message_resource(
+            root_id,
+            image_key,
+            "image",
+        )
+        video = self.api.reply_user_media_in_thread(
+            root_id,
+            msg_type="media",
+            resource_key=video_key,
+            cover_image_key=image_key,
+        )
+        file_message = self.api.reply_user_media_in_thread(
+            root_id,
+            msg_type="file",
+            resource_key=file_key,
+        )
+        history_marker = f"HERMES_E2E_EXISTING_MEDIA_HISTORY:{marker}"
+        history = self.api.reply_text_in_thread(root_id, history_marker)
+        thread_id = str(history.get("thread_id") or "")
+        self.assertTrue(thread_id.startswith("omt_"))
+        self._assert_reply_is_in_root_thread(video, root_id, thread_id)
+        self._assert_reply_is_in_root_thread(file_message, root_id, thread_id)
+        self._assert_no_bot_activity(
+            chat_id=self.group_chat_id,
+            root_message=root,
+            marker=history_marker,
+        )
+
+        database = SessionDB(db_path=self.session_db_path, read_only=True)
+        try:
+            self.assertIsNone(
+                database.find_session_by_origin(
+                    platform="feishu",
+                    chat_id=self.group_chat_id,
+                    thread_id=root_id,
+                )
+            )
+        finally:
+            database.close()
+
+        activation_marker = self._marker("EXISTING-MEDIA-ACTIVATE")
+        activation = self.api.reply_text_in_thread(
+            root_id,
+            (
+                f'<at user_id="{self.bot_open_id}">{self.bot_name}</at> '
+                f"{activation_marker}\n"
+                "HERMES_E2E_EXISTING_MEDIA_CONTEXT_PROBE"
+            ),
+        )
+        reply, observed_thread_id = self._wait_for_bot_reply(
+            root_id=root_id,
+            expected_text=(
+                "HERMES_E2E_EXISTING_MEDIA_CONTEXT:"
+                "ROOT=YES;HISTORY=YES;FILE=YES;VIDEO=YES"
+            ),
+            after_ms=_message_time_ms(activation),
+        )
+        self.assertEqual(observed_thread_id, thread_id)
+        self._assert_reply_is_in_root_thread(reply, root_id, thread_id)
+        session = self._wait_for_persisted_session(
+            chat_id=self.group_chat_id,
+            chat_type="group",
+            root_id=root_id,
+            transcript_markers=(
+                activation_marker,
+                "HERMES_E2E_IMAGE_SHA256:",
+                "HERMES_E2E_EXISTING_MEDIA_CONTEXT:"
+                "ROOT=YES;HISTORY=YES;FILE=YES;VIDEO=YES",
+            ),
+        )
+
+        transcript = session["transcript"].replace("\\", "")
+        self.assertLess(
+            transcript.index(f"HERMES_E2E_EXISTING_MEDIA_ROOT:{marker}"),
+            transcript.index(history_marker),
+        )
+        self.assertIn("e2e-history.mp4", transcript)
+        self.assertIn("e2e-history.txt", transcript)
+        cached_images = [
+            path
+            for path in get_image_cache_dir().iterdir()
+            if path.read_bytes() == historical_image_bytes
+        ]
+        cached_documents = list(get_document_cache_dir().iterdir())
+        cached_video = [
+            path for path in cached_documents if path.read_bytes() == _TINY_MP4_BYTES
+        ]
+        cached_file = [
+            path for path in cached_documents if path.read_bytes() == file_bytes
+        ]
+        self.assertTrue(cached_images)
+        self.assertTrue(cached_video)
+        self.assertTrue(cached_file)
+        self.assertTrue(any(str(path) in transcript for path in cached_images))
+        self.assertTrue(any(str(path) in transcript for path in cached_video))
+        self.assertTrue(any(str(path) in transcript for path in cached_file))
 
     def test_group_long_markdown_is_losslessly_chunked_in_one_thread(self) -> None:
         """A sizeable rich answer is split without loss or top-level escape."""

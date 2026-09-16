@@ -144,6 +144,68 @@ class E2EOpenAIStubTests(unittest.TestCase):
         self.assertFalse(any(delta.get("tool_calls") for delta in deltas))
         self.assertEqual(events[-1]["choices"][0]["finish_reason"], "stop")
 
+    def test_steer_tool_fixture_holds_a_safe_terminal_call(self) -> None:
+        """A real running terminal call gives the live suite a Steer boundary."""
+        marker = "steer-tool-run-123"
+
+        events = self._request_stream_events(
+            {
+                "model": "hermes-lark-e2e",
+                "messages": [
+                    {
+                        "role": "user",
+                        "content": f"HERMES_E2E_STEER_TOOL:{marker}",
+                    }
+                ],
+            }
+        )
+
+        tool_calls = [
+            call
+            for event in events
+            for call in event["choices"][0]["delta"].get("tool_calls", [])
+        ]
+        self.assertEqual(tool_calls[0]["function"]["name"], "terminal")
+        arguments = json.loads(tool_calls[0]["function"]["arguments"])
+        self.assertIn("sleep 8", arguments["command"])
+        self.assertIn(f"HERMES_E2E_STEER_TOOL_EXECUTED:{marker}", arguments["command"])
+
+    def test_question_fixture_requests_one_real_interaction_card(self) -> None:
+        """The live suite can suspend CardKit behind an actual question card."""
+        marker = "question-run-123"
+
+        events = self._request_stream_events(
+            {
+                "model": "hermes-lark-e2e",
+                "messages": [
+                    {
+                        "role": "user",
+                        "content": f"HERMES_E2E_QUESTION:{marker}",
+                    }
+                ],
+            }
+        )
+
+        tool_calls = [
+            call
+            for event in events
+            for call in event["choices"][0]["delta"].get("tool_calls", [])
+        ]
+        content = "".join(
+            str(event["choices"][0]["delta"].get("content") or "")
+            for event in events
+        )
+        self.assertIn(f"HERMES_E2E_QUESTION_PARTIAL:{marker}", content)
+        self.assertEqual(
+            tool_calls[0]["function"]["name"],
+            "tool_call",
+        )
+        arguments = json.loads(tool_calls[0]["function"]["arguments"])
+        self.assertEqual(arguments["name"], "feishu_ask_user_question")
+        question = arguments["arguments"]["questions"][0]
+        self.assertEqual(question["header"], "Path")
+        self.assertIn(marker, question["question"])
+
     def test_approval_fixture_requests_removal_then_observes_denial(self) -> None:
         """An isolated sentinel target exercises Hermes' real approval gate."""
         marker = "approval-run-123"
@@ -405,6 +467,52 @@ class E2EOpenAIStubTests(unittest.TestCase):
             (
                 "HERMES_E2E_EXISTING_CONTEXT:"
                 "ROOT=YES;HISTORY=YES",
+            ),
+        )
+
+    def test_existing_human_thread_media_probe_observes_every_resource(self) -> None:
+        """The provider proves historical image, video, and file context arrived."""
+        image_bytes = b"historical-image"
+        encoded = base64.b64encode(image_bytes).decode()
+        payload = {
+            "messages": [
+                {
+                    "role": "user",
+                    "content": [
+                        {
+                            "type": "text",
+                            "text": "\n".join(
+                                (
+                                    "HERMES_E2E_EXISTING_MEDIA_ROOT:root",
+                                    "HERMES_E2E_EXISTING_MEDIA_HISTORY:history",
+                                    "e2e-history.txt",
+                                    "e2e-history.mp4",
+                                    "HERMES_E2E_EXISTING_MEDIA_CONTEXT_PROBE",
+                                )
+                            ),
+                        },
+                        {
+                            "type": "image_url",
+                            "image_url": {
+                                "url": f"data:image/png;base64,{encoded}",
+                            },
+                        },
+                    ],
+                }
+            ]
+        }
+
+        self.assertEqual(
+            openai_stub._response_chunks(payload),
+            (
+                "\n".join(
+                    (
+                        "HERMES_E2E_IMAGE_SHA256:"
+                        f"{hashlib.sha256(image_bytes).hexdigest()}",
+                        "HERMES_E2E_EXISTING_MEDIA_CONTEXT:"
+                        "ROOT=YES;HISTORY=YES;FILE=YES;VIDEO=YES",
+                    )
+                ),
             ),
         )
 
