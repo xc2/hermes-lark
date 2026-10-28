@@ -157,11 +157,12 @@ After importing the E2E permissions and publishing the app, run:
 ```bash
 mkdir -p .hermes-validation .hermes-secrets
 chmod 700 .hermes-validation .hermes-secrets
+docker volume create hermes-lark-validation-installs
 docker compose -f compose.validation.yaml build gateway
 docker compose -f compose.validation.yaml run --rm --no-deps \
-  --user "$(id -u):$(id -g)" \
+  --user "$(id -u):$(id -g)" --workdir /opt/hermes-lark \
   --entrypoint /opt/hermes/.venv/bin/python gateway \
-  /opt/hermes-lark/tests/e2e/acquire_user_access_token.py
+  -m tests.e2e.acquire_user_access_token
 ```
 
 The script uses OAuth Device Flow and asks only for browser authorization by

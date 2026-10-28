@@ -147,6 +147,7 @@ run_live_tests() {
     -m unittest -c -v "$@"
 }
 
+docker volume create hermes-lark-validation-installs >/dev/null
 "${compose[@]}" build gateway
 "${compose[@]}" run --rm --no-deps --user 0 --entrypoint chown gateway \
   "$(id -u):$(id -g)" /opt/data/installs

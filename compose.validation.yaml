@@ -64,5 +64,7 @@ services:
       retries: 10
 
 volumes:
+  # Created by tests/e2e/run.sh and shared by every Compose project name.
   installs:
     name: hermes-lark-validation-installs
+    external: true

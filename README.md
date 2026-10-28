@@ -289,6 +289,7 @@ cp .env.example .env
 chmod 600 .env
 mkdir -p .hermes-validation .hermes-secrets
 chmod 700 .hermes-validation .hermes-secrets
+docker volume create hermes-lark-validation-installs
 docker compose -f compose.validation.yaml build
 docker compose -f compose.validation.yaml run --rm --no-deps --user 0 \
   --entrypoint chown gateway "$(id -u):$(id -g)" /opt/data/installs
