@@ -6,7 +6,7 @@ updates:
       interval: weekly
     open-pull-requests-limit: 5
     ignore:
-      # Hermes Agent 0.19.1 pins packaging 26.0, which excludes Twine 7.
+      # Hermes Agent 0.22.5 pins packaging 26.0, which excludes Twine 7.
       - dependency-name: twine
         versions: [">=7"]
       # lark-oapi currently requires websockets below 16.

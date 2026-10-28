@@ -304,7 +304,13 @@ class CardKitAdapterTests(unittest.TestCase):
                 return True
 
         owner = BusyOwner()
-        adapter._busy_session_handler = owner.handle
+
+        async def scoped_busy_handler(event: Any, session_key: str) -> bool:
+            """Model Hermes 0.22's scoped closure around the runner handler."""
+            return await owner.handle(event, session_key)
+
+        adapter._busy_session_handler = scoped_busy_handler
+        adapter.gateway_runner = owner
         adapter._cardkit_create = create
         adapter._feishu_send_with_retry = send_with_retry
 
@@ -2075,6 +2081,33 @@ class CardKitAdapterTests(unittest.TestCase):
         self.assertEqual(sends[-1][1]["msg_type"], "text")
         self.assertFalse(any(call[0] == "settings" for call in calls))
         self.assertFalse(any(call[0] == "update" for call in calls))
+
+    def test_stream_segment_close_send_streams_into_the_active_card(self) -> None:
+        """A tool-boundary first send stays on the card instead of a new message."""
+        adapter, calls = self._adapter()
+
+        async def scenario() -> None:
+            state = await adapter._start_cardkit_turn(self._event())
+            result = await adapter.send(
+                "oc_chat",
+                "Answer before the tool.",
+                reply_to="om_root",
+                metadata={
+                    "thread_id": "om_root",
+                    "reply_to_message_id": "om_root",
+                    "notify": True,
+                },
+            )
+
+            self.assertTrue(result.success)
+            self.assertEqual(result.message_id, "om_card")
+            self.assertEqual(state.content, "Answer before the tool.")
+            self.assertFalse(state.closed)
+
+        asyncio.run(scenario())
+
+        sends = [call for call in calls if call[0] == "send"]
+        self.assertEqual(len(sends), 1)
 
     def test_progress_sends_update_the_active_card_without_plain_messages(self) -> None:
         adapter, calls = self._adapter()

@@ -126,6 +126,12 @@ switches.
 ## Persistent credentials
 
 Only Docker is required on the host; Hermes does not need to be installed.
+The runner installs this checkout as the `feishu-platform` directory plugin and
+lets Hermes' package manager resolve its dependencies, as a production install
+does. Those dependency environments live in the
+`hermes-lark-validation-installs` Docker volume, which is case-sensitive even on
+macOS and is reused across runs; remove it with
+`docker volume rm hermes-lark-validation-installs` to force a fresh resolve.
 Store the stable test app credentials in the repository-root `.env`, separate
 from the rebuildable `.hermes-validation/` directory:
 
@@ -151,11 +157,12 @@ After importing the E2E permissions and publishing the app, run:
 ```bash
 mkdir -p .hermes-validation .hermes-secrets
 chmod 700 .hermes-validation .hermes-secrets
+docker volume create hermes-lark-validation-installs
 docker compose -f compose.validation.yaml build gateway
 docker compose -f compose.validation.yaml run --rm --no-deps \
-  --user "$(id -u):$(id -g)" \
+  --user "$(id -u):$(id -g)" --workdir /opt/hermes-lark \
   --entrypoint /opt/hermes/.venv/bin/python gateway \
-  /opt/hermes-lark/tests/e2e/acquire_user_access_token.py
+  -m tests.e2e.acquire_user_access_token
 ```
 
 The script uses OAuth Device Flow and asks only for browser authorization by

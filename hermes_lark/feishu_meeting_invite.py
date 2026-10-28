@@ -268,10 +268,12 @@ async def handle_meeting_invited_event(adapter: Any, data: Any) -> None:
         raw_message=data,
         message_id=synthetic_message_id,
     )
-    event.metadata = {
+    from .adapter import FEISHU_METADATA_ATTR
+
+    setattr(event, FEISHU_METADATA_ATTR, {
         "synthetic_event_type": "vc.bot.meeting_invited_v1",
         "vc_meeting_id": payload.meeting.id if payload.meeting else "",
         "vc_meeting_no": payload.meeting.meeting_no if payload.meeting else "",
         "vc_call_id": payload.call_id,
-    }
+    })
     await adapter._handle_message_with_guards(event)

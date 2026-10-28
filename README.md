@@ -1,7 +1,7 @@
 # hermes-lark
 
 [![CI](https://github.com/xc2/hermes-lark/actions/workflows/ci.yml/badge.svg)](https://github.com/xc2/hermes-lark/actions/workflows/ci.yml)
-[![Python 3.11-3.13](https://img.shields.io/badge/python-3.11--3.13-blue.svg)](https://www.python.org/)
+[![Python 3.14](https://img.shields.io/badge/python-3.14-blue.svg)](https://www.python.org/)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green.svg)](https://github.com/xc2/hermes-lark/blob/main/LICENSE)
 
 `hermes-lark` is an independent Feishu/Lark platform plugin for
@@ -43,8 +43,8 @@ The current compatibility baseline is
 
 ## Requirements
 
-- Python 3.11 through 3.13
-- Hermes Agent `>=0.19.1,<0.20.0`
+- Python 3.14, the interpreter Hermes Agent 0.22 runs on
+- Hermes Agent 0.22.5 or newer (`requires_hermes` in `plugin.yaml`)
 - Node.js 22 or newer
 - A published Feishu or Lark self-built application with bot capability
 
@@ -68,7 +68,7 @@ hermes gateway restart
 For an editable development checkout, replace the install command with:
 
 ```bash
-python -m pip install -e '.[dev]'
+python -m pip install -e . -r requirements-dev.txt
 ```
 
 Confirm that Hermes loads `platforms/feishu` from this package rather than its
@@ -279,18 +279,28 @@ DM-only or diagnostics-only restriction.
 
 ## Docker validation
 
-The validation image pins Hermes Agent 0.19.1. A host installation of Hermes is
-not required:
+The validation image pins Hermes Agent 0.22.5. A host installation of Hermes is
+not required. The configuration step installs this checkout as the
+`feishu-platform` directory plugin, and Hermes' package manager resolves its
+dependencies into the `hermes-lark-validation-installs` Docker volume:
 
 ```bash
 cp .env.example .env
 chmod 600 .env
+mkdir -p .hermes-validation .hermes-secrets
+chmod 700 .hermes-validation .hermes-secrets
+docker volume create hermes-lark-validation-installs
 docker compose -f compose.validation.yaml build
+docker compose -f compose.validation.yaml run --rm --no-deps --user 0 \
+  --entrypoint chown gateway "$(id -u):$(id -g)" /opt/data/installs
 docker compose -f compose.validation.yaml run --rm --no-deps \
+  --user "$(id -u):$(id -g)" \
   --entrypoint /opt/hermes/.venv/bin/python gateway \
   /opt/hermes-lark/tests/e2e/configure_gateway.py
-docker compose -f compose.validation.yaml run --rm gateway \
-  plugins list --plain --no-bundled
+docker compose -f compose.validation.yaml run --rm --no-deps \
+  --user "$(id -u):$(id -g)" \
+  --entrypoint /opt/hermes/.venv/bin/hermes gateway \
+  pm install --extra feishu
 ```
 
 The credentialed E2E suite requires a dedicated test application and a user
@@ -310,9 +320,10 @@ Install development dependencies and run the offline suite:
 
 ```bash
 git clone --filter=blob:none https://github.com/NousResearch/hermes-agent.git ../hermes-agent
-git -C ../hermes-agent checkout --detach cc4cab2f592e60a197e796506de9168f74baf3ea
-python -m pip install -e ../hermes-agent
-python -m pip install -e '.[dev]'
+git -C ../hermes-agent checkout --detach bf0203a794a07aac3ff764972ab9087baa4e4f4e
+uv sync --frozen --extra feishu --project ../hermes-agent
+. ../hermes-agent/.venv/bin/activate
+uv pip install -e . -r requirements-dev.txt
 python -m ruff check .
 python scripts/check_english.py
 python scripts/check_project.py

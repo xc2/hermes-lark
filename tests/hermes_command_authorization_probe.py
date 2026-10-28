@@ -1,16 +1,18 @@
-"""Subprocess integration probe for command authorization in Hermes 0.19.1."""
+"""Subprocess integration probe for command authorization in real Hermes."""
 
 from __future__ import annotations
 
 import os
+import re
 import unittest
-from importlib.metadata import version
+from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, patch
 
 import hermes_lark
 from hermes_lark import commands as feishu_commands
 from hermes_cli.plugins import PluginContext, PluginManager, PluginManifest
+from hermes_cli.plugins_manifest import running_hermes_version, version_satisfies
 from gateway.config import Platform
 from gateway.platforms.base import MessageEvent
 from gateway.run import GatewayRunner
@@ -33,10 +35,17 @@ class HermesCommandAuthorizationIntegrationTests(unittest.IsolatedAsyncioTestCas
     @classmethod
     def setUpClass(cls) -> None:
         """Pin the host behavior asserted by this integration contract."""
-        host_version = version("hermes-agent")
-        if host_version != "0.19.1":
+        manifest = (Path(__file__).resolve().parents[1] / "plugin.yaml").read_text(
+            encoding="utf-8"
+        )
+        match = re.search(r'(?m)^requires_hermes:\s*"?([^"\n]+)"?', manifest)
+        if match is None:
+            raise AssertionError("plugin.yaml declares no requires_hermes")
+        required = match.group(1).strip()
+        host_version = running_hermes_version()
+        if not version_satisfies(required, host_version):
             raise AssertionError(
-                f"expected Hermes Agent 0.19.1, found {host_version}"
+                f"expected Hermes Agent {required}, found {host_version}"
             )
 
     def setUp(self) -> None:
@@ -165,7 +174,7 @@ class HermesCommandAuthorizationIntegrationTests(unittest.IsolatedAsyncioTestCas
             ),
             patch.object(
                 self.runner,
-                "_adapter_for_source",
+                "_delivery_adapter_for",
                 return_value=adapter,
             ),
             patch.object(

@@ -51,6 +51,12 @@ class E2EGatewayConfigTests(unittest.TestCase):
                     configure_gateway.main()
 
             configured = yaml.safe_load(config_path.read_text(encoding="utf-8"))
+            plugin_dir = root / "plugins" / "feishu-platform"
+            plugin_manifest_copied = (plugin_dir / "plugin.yaml").is_file()
+            checkout_secrets_copied = any(
+                (plugin_dir / name).exists()
+                for name in (".git", ".env", ".hermes-secrets", ".hermes-validation")
+            )
             runtime_state = json.loads(
                 (root / "gateway_state.json").read_text(encoding="utf-8")
             )
@@ -72,8 +78,10 @@ class E2EGatewayConfigTests(unittest.TestCase):
         )
         self.assertEqual(
             configured["plugins"],
-            {"enabled": ["platforms/feishu"]},
+            {"enabled": ["feishu-platform"]},
         )
+        self.assertTrue(plugin_manifest_copied)
+        self.assertFalse(checkout_secrets_copied)
         self.assertEqual(
             set(configured["gateway"]["platforms"]),
             {"feishu"},

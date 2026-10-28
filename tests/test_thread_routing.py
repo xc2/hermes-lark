@@ -134,10 +134,12 @@ class ThreadRoutingTests(unittest.TestCase):
         self.assertIsNotNone(event)
         self.assertEqual(event.source.thread_id, "om_group_root")
         self.assertEqual(
-            event.metadata["feishu_session_thread_id"],
+            event._feishu_metadata["feishu_session_thread_id"],
             "om_group_root",
         )
-        self.assertNotIn("feishu_thread_id", event.metadata)
+        self.assertNotIn("feishu_thread_id", event._feishu_metadata)
+        # Hermes' durable admission refuses events with adapter-owned metadata.
+        self.assertFalse(getattr(event, "metadata", None))
         self.assertEqual(
             adapter._thread_route_for_message("om_group_root"),
             "om_group_root",
@@ -165,10 +167,12 @@ class ThreadRoutingTests(unittest.TestCase):
         self.assertEqual(event.source.chat_type, "dm")
         self.assertEqual(event.source.thread_id, "om_dm_root")
         self.assertEqual(
-            event.metadata["feishu_session_thread_id"],
+            event._feishu_metadata["feishu_session_thread_id"],
             "om_dm_root",
         )
-        self.assertNotIn("feishu_thread_id", event.metadata)
+        self.assertNotIn("feishu_thread_id", event._feishu_metadata)
+        # Hermes' durable admission refuses events with adapter-owned metadata.
+        self.assertFalse(getattr(event, "metadata", None))
 
     def test_native_thread_uses_message_root_not_native_thread_id(self) -> None:
         adapter = self._adapter(
@@ -193,10 +197,10 @@ class ThreadRoutingTests(unittest.TestCase):
         self.assertIsNotNone(event)
         self.assertEqual(event.source.thread_id, "om_canonical_root")
         self.assertEqual(
-            event.metadata["feishu_session_thread_id"],
+            event._feishu_metadata["feishu_session_thread_id"],
             "om_canonical_root",
         )
-        self.assertEqual(event.metadata["feishu_thread_id"], "omt_native")
+        self.assertEqual(event._feishu_metadata["feishu_thread_id"], "omt_native")
         self.assertEqual(
             adapter._thread_route_for_message("om_thread_reply"),
             "om_canonical_root",
@@ -917,11 +921,11 @@ class ThreadRoutingTests(unittest.TestCase):
                 self.assertIsNotNone(event)
                 self.assertEqual(event.source.thread_id, "om_thread_root")
                 self.assertEqual(
-                    event.metadata["feishu_session_thread_id"],
+                    event._feishu_metadata["feishu_session_thread_id"],
                     "om_thread_root",
                 )
                 self.assertEqual(
-                    event.metadata["feishu_thread_id"],
+                    event._feishu_metadata["feishu_thread_id"],
                     "omt_native",
                 )
                 self.assertEqual(
@@ -952,10 +956,12 @@ class ThreadRoutingTests(unittest.TestCase):
         self.assertIsNotNone(event)
         self.assertEqual(event.source.thread_id, "om_new_root")
         self.assertEqual(
-            event.metadata["feishu_session_thread_id"],
+            event._feishu_metadata["feishu_session_thread_id"],
             "om_new_root",
         )
-        self.assertNotIn("feishu_thread_id", event.metadata)
+        self.assertNotIn("feishu_thread_id", event._feishu_metadata)
+        # Hermes' durable admission refuses events with adapter-owned metadata.
+        self.assertFalse(getattr(event, "metadata", None))
         self.assertEqual(event.reply_to_message_id, "om_quoted_message")
 
     def test_legacy_thread_options_do_not_change_routing(self) -> None:

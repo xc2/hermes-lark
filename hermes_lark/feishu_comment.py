@@ -1357,7 +1357,9 @@ async def handle_drive_comment_event(
         message_id=reply_id or parsed["event_id"] or comment_id,
         reply_to_message_id=reply_id or None,
     )
-    normalized.metadata = {
+    from .adapter import FEISHU_METADATA_ATTR
+
+    setattr(normalized, FEISHU_METADATA_ATTR, {
         "feishu_drive_comment": {
             "file_token": file_token,
             "file_type": file_type,
@@ -1366,7 +1368,7 @@ async def handle_drive_comment_event(
             "is_whole": is_whole,
             "sender_open_id": from_open_id,
         }
-    }
+    })
     await adapter._handle_message_with_guards(normalized)
 
     logger.info("[Feishu-Comment] ========== handle_drive_comment_event END ==========")

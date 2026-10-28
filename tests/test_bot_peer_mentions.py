@@ -76,7 +76,7 @@ class BotPeerMentionTests(unittest.TestCase):
         reply_to_message_id: str = "",
     ) -> Any:
         return SimpleNamespace(
-            metadata={
+            _feishu_metadata={
                 "feishu_bot_peer": {
                     "open_id": peer_open_id,
                     "name": peer_name,
@@ -421,11 +421,11 @@ class BotPeerMentionTests(unittest.TestCase):
         self.assertEqual(event.source.thread_id, "om_root")
         self.assertEqual(event.source.feishu_thread_id, "omt_hidden")
         self.assertEqual(
-            event.metadata["feishu_session_thread_id"],
+            event._feishu_metadata["feishu_session_thread_id"],
             "om_root",
         )
         self.assertEqual(
-            event.metadata["feishu_bot_peer"],
+            event._feishu_metadata["feishu_bot_peer"],
             {"open_id": "ou_peer", "name": "PeerBot"},
         )
 

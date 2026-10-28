@@ -233,6 +233,19 @@ class MultiAccountFeishuAdapter(BasePlatformAdapter):
             metadata=metadata,
         )
 
+    @classmethod
+    def supports_exec_approval_buttons(cls) -> bool:
+        """Report the native approval card each account renders."""
+        return True
+
+    async def reauthorize_native_roles(self, source: Any) -> bool:
+        """Re-check a durable role grant with the originating account."""
+        child, _ = self._route(
+            getattr(source, "chat_id", "") or "",
+            {"account_id": getattr(source, "scope_id", "") or ""},
+        )
+        return bool(child is not None and await child.reauthorize_native_roles(source))
+
     async def send_exec_approval(self, chat_id: str, *args: Any, **kwargs: Any) -> SendResult:
         """Route an execution-approval card to the originating account."""
         child, raw_chat_id = self._route(chat_id, kwargs.get("metadata"))

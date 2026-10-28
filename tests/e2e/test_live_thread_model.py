@@ -947,6 +947,30 @@ def _sender_id(message: dict[str, Any]) -> str:
     return str(sender.get("id") or "") if isinstance(sender, dict) else ""
 
 
+def _cached_media_references(path: Path) -> tuple[str, ...]:
+    """Transcript spellings of one cached inbound file.
+
+    Hermes Agent 0.22 captures admitted media as a content-addressed copy under
+    ``native-inputs/<sha256>/<name>`` and replays the turn from that copy.
+    """
+    from gateway.platforms.base import get_document_cache_dir
+
+    digest = hashlib.sha256(path.read_bytes()).hexdigest()
+    return (
+        str(path),
+        str(get_document_cache_dir() / "native-inputs" / digest / path.name),
+    )
+
+
+def _transcript_names_cached_media(transcript: str, paths: Any) -> bool:
+    """Whether a transcript references one of the exact cached files."""
+    return any(
+        reference in transcript
+        for path in paths
+        for reference in _cached_media_references(path)
+    )
+
+
 def _message_time_ms(message: dict[str, Any]) -> int:
     """Return one message creation timestamp as milliseconds."""
     try:
@@ -1439,14 +1463,19 @@ class LiveThreadModelTests(unittest.TestCase):
 
         cached_images = set(get_image_cache_dir().iterdir()) - image_cache_before
         exact_cached_images = [
-            path for path in cached_images if path.read_bytes() == _TINY_PNG_BYTES
+            path
+            for path in cached_images
+            if path.is_file() and path.read_bytes() == _TINY_PNG_BYTES
         ]
         self.assertTrue(
             exact_cached_images,
             "the adapter did not retain the exact inbound image bytes",
         )
         self.assertTrue(
-            any(str(path) in image_session["transcript"] for path in exact_cached_images),
+            _transcript_names_cached_media(
+                image_session["transcript"],
+                exact_cached_images,
+            ),
             "the persisted user turn omitted its cached image reference",
         )
         self.assertIn("[screenshot]", image_session["transcript"])
@@ -1492,7 +1521,10 @@ class LiveThreadModelTests(unittest.TestCase):
         self.assertEqual(file_session["id"], image_session["id"])
         cached_files = set(get_document_cache_dir().iterdir()) - file_cache_before
         self.assertTrue(
-            any(path.read_bytes() == file_bytes for path in cached_files),
+            any(
+                path.is_file() and path.read_bytes() == file_bytes
+                for path in cached_files
+            ),
             "the adapter did not retain the exact inbound file bytes",
         )
 
@@ -3232,9 +3264,11 @@ class LiveThreadModelTests(unittest.TestCase):
         cached_images = [
             path
             for path in get_image_cache_dir().iterdir()
-            if path.read_bytes() == historical_image_bytes
+            if path.is_file() and path.read_bytes() == historical_image_bytes
         ]
-        cached_documents = list(get_document_cache_dir().iterdir())
+        cached_documents = [
+            path for path in get_document_cache_dir().iterdir() if path.is_file()
+        ]
         cached_video = [
             path for path in cached_documents if path.read_bytes() == _TINY_MP4_BYTES
         ]
@@ -3244,9 +3278,9 @@ class LiveThreadModelTests(unittest.TestCase):
         self.assertTrue(cached_images)
         self.assertTrue(cached_video)
         self.assertTrue(cached_file)
-        self.assertTrue(any(str(path) in transcript for path in cached_images))
-        self.assertTrue(any(str(path) in transcript for path in cached_video))
-        self.assertTrue(any(str(path) in transcript for path in cached_file))
+        self.assertTrue(_transcript_names_cached_media(transcript, cached_images))
+        self.assertTrue(_transcript_names_cached_media(transcript, cached_video))
+        self.assertTrue(_transcript_names_cached_media(transcript, cached_file))
 
     def test_group_long_markdown_is_losslessly_chunked_in_one_thread(self) -> None:
         """A sizeable rich answer is split without loss or top-level escape."""

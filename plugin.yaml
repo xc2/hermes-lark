@@ -2,6 +2,7 @@ name: feishu-platform
 label: Feishu / Lark
 kind: platform
 version: 1.0.0
+requires_hermes: ">=0.22.5"
 description: >
   Feishu / Lark platform plugin for Hermes Agent, aligned with the
   larksuite/openclaw-lark channel behavior.

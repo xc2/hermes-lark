@@ -7,8 +7,31 @@ and the project intends to follow [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Changed
+
+- Require Hermes Agent 0.22.5 or newer, declared through `requires_hermes`
+  in `plugin.yaml`; Hermes Agent 0.19 is no longer supported.
+- Declare Python dependencies as bounded ranges that resolve with Hermes
+  Agent's own pins, drop the upper Python bound that broke Hermes' plugin
+  dependency lock on Python 3.14, and move development tools from the `dev`
+  extra to `requirements-dev.txt`.
+
 ### Fixed
 
+- Load on Hermes Agent 0.22.5: use the relocated scoped-lock release, the
+  renamed SSRF redirect guard, and Hermes' package manager instead of the
+  retired lazy-dependency installer.
+- Report lark-oapi availability without installing it from status and
+  configuration checks; install it only when the gateway starts Feishu.
+- Enable Feishu from `FEISHU_APP_ID` and `FEISHU_APP_SECRET` in the
+  environment again, including the home channel and its thread.
+- Answer ordinary Feishu messages under Hermes Agent 0.22's durable message
+  admission: keep Feishu-private per-message data off `MessageEvent.metadata`,
+  which Hermes refused, and re-check group and open-DM grants against the
+  current policy through `reauthorize_native_roles`.
+- Restore what Hermes Agent 0.22 now reads from the platform entry: native
+  approval cards instead of the text `/approve` prompt, the Feishu system-prompt
+  hint, the medium display tier, and explicit `oc_`/`ou_` send targets.
 - Revalidate stored Feishu user authorization against the remote grant before
   completing batch authorization, so revoked credentials re-enter Device Flow.
 - Distinguish standalone `/feishu auth` from tool-triggered OAuth, resume the

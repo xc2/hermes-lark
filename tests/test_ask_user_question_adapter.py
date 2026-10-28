@@ -25,6 +25,7 @@ _MANAGED_MODULES = (
     "gateway.platforms",
     "gateway.platforms.base",
     "gateway.status",
+    "gateway.status_scoped_locks",
     "hermes_constants",
     "utils",
     "hermes_lark",
@@ -119,7 +120,8 @@ def _install_hermes_stubs() -> None:
     base.cache_image_from_bytes = cache_value
     status = types.ModuleType("gateway.status")
     status.acquire_scoped_lock = lambda *args, **kwargs: (True, None)
-    status.release_scoped_lock = lambda *args, **kwargs: None
+    scoped_locks = types.ModuleType("gateway.status_scoped_locks")
+    scoped_locks.release_scoped_lock = lambda *args, **kwargs: None
 
     constants = types.ModuleType("hermes_constants")
     constants.get_hermes_home = lambda: Path(tempfile.gettempdir())
@@ -135,6 +137,7 @@ def _install_hermes_stubs() -> None:
             "gateway.platforms": platforms,
             "gateway.platforms.base": base,
             "gateway.status": status,
+            "gateway.status_scoped_locks": scoped_locks,
             "hermes_constants": constants,
             "utils": utils,
         }

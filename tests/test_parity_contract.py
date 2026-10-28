@@ -288,6 +288,8 @@ def _check_adapter_registers_the_complete_platform_surface() -> None:
     assert {
         "adapter_factory",
         "check_fn",
+        "ensure_deps_fn",
+        "env_enablement_fn",
         "is_connected",
         "validate_config",
         "setup_fn",

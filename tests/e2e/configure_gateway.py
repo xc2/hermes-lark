@@ -4,13 +4,36 @@ from __future__ import annotations
 
 import json
 import os
+import shutil
 from pathlib import Path
 
-import yaml
+PLUGIN_NAME = "feishu-platform"
+# Checkout state that never belongs in the installed plugin directory.
+_PLUGIN_COPY_IGNORE = shutil.ignore_patterns(
+    ".git",
+    ".env",
+    ".hermes-secrets",
+    ".hermes-validation",
+    "__pycache__",
+    "node_modules",
+)
+
+
+def install_plugin(hermes_home: Path) -> Path:
+    """Install this checkout as the Hermes directory plugin, replacing any copy."""
+    source = Path(__file__).resolve().parents[2]
+    target = hermes_home / "plugins" / PLUGIN_NAME
+    if target.is_symlink() or target.is_file():
+        target.unlink()
+    elif target.exists():
+        shutil.rmtree(target)
+    shutil.copytree(source, target, ignore=_PLUGIN_COPY_IGNORE)
+    return target
 
 
 def main() -> None:
     """Replace disposable state with the isolated E2E configuration."""
+    import hermes_yaml
     from hermes_cli.config import DEFAULT_CONFIG
 
     hermes_home = Path(os.environ.get("HERMES_HOME", "/opt/data"))
@@ -25,7 +48,7 @@ def main() -> None:
             "api_mode": "chat_completions",
             "supports_vision": True,
         },
-        "plugins": {"enabled": ["platforms/feishu"]},
+        "plugins": {"enabled": [PLUGIN_NAME]},
         "gateway": {
             "platforms": {
                 "feishu": {
@@ -70,11 +93,12 @@ def main() -> None:
     }
 
     config_path.parent.mkdir(parents=True, exist_ok=True)
+    install_plugin(hermes_home)
     (hermes_home / "feishu_cardkit_e2e_trace.jsonl").unlink(
         missing_ok=True
     )
     config_path.write_text(
-        yaml.safe_dump(config, allow_unicode=True, sort_keys=False),
+        hermes_yaml.safe_dump(config, allow_unicode=True, sort_keys=False),
         encoding="utf-8",
     )
     (hermes_home / "gateway_state.json").write_text(

@@ -3,7 +3,7 @@ services:
     build:
       context: .
       args:
-        HERMES_AGENT_IMAGE: ${HERMES_AGENT_IMAGE:-nousresearch/hermes-agent@sha256:f59eb17c55f90409bb805525b7c2bd12dcd61355ebd3d2604272bed5dc597b67}
+        HERMES_AGENT_IMAGE: ${HERMES_AGENT_IMAGE:-nousresearch/hermes-agent@sha256:9c5561579f3ffdf333401797094ac3a743738d6c25d40f4331c7bf77b694238d}
     image: hermes-lark:validation
     command:
       - gateway
@@ -16,6 +16,10 @@ services:
       HERMES_ALLOW_PRIVATE_URLS: "true"
       HERMES_HUMAN_DELAY_MODE: "off"
       HERMES_PLUGINS_DEBUG: "1"
+      # The image drops to its hermes user; match the host user that owns
+      # .hermes-validation and the dependency volume.
+      HERMES_UID: ${HERMES_E2E_UID:-10000}
+      HERMES_GID: ${HERMES_E2E_GID:-10000}
     env_file:
       - path: ./.env
         required: false
@@ -25,6 +29,12 @@ services:
         target: /opt/data
         bind:
           create_host_path: false
+      # Hermes builds plugin dependency environments here. A named volume keeps
+      # them on a case-sensitive filesystem, which macOS bind mounts are not,
+      # and reuses them across runs.
+      - type: volume
+        source: installs
+        target: /opt/data/installs
       - type: bind
         source: ./.hermes-secrets
         target: /opt/secrets
@@ -52,3 +62,9 @@ services:
       interval: 2s
       timeout: 3s
       retries: 10
+
+volumes:
+  # Created by tests/e2e/run.sh and shared by every Compose project name.
+  installs:
+    name: hermes-lark-validation-installs
+    external: true

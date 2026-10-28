@@ -18,7 +18,7 @@ class HermesCommandAuthorizationProcessTests(unittest.TestCase):
     """Keep real Hermes imports out of the offline test process."""
 
     def test_real_hermes_gateway_command_authorization_contract(self) -> None:
-        """Run every authenticated and rejected dispatch case in Hermes 0.19.1."""
+        """Run every authenticated and rejected dispatch case in real Hermes."""
         with tempfile.TemporaryDirectory(prefix="hermes-lark-command-auth-") as home:
             environment = os.environ.copy()
             environment["HERMES_HOME"] = home

@@ -75,6 +75,9 @@ printf '%s\n' "$$" > "$lock_pid_file"
 
 project_name="hermes-lark-e2e-$$"
 compose=(docker compose -p "$project_name" -f compose.validation.yaml)
+HERMES_E2E_UID="$(id -u)"
+HERMES_E2E_GID="$(id -g)"
+export HERMES_E2E_UID HERMES_E2E_GID
 restart_checkpoint="$repo_root/.hermes-validation/hermes-lark-e2e-gateway-restart.json"
 rm -f "$restart_checkpoint"
 up_started=0
@@ -144,11 +147,20 @@ run_live_tests() {
     -m unittest -c -v "$@"
 }
 
+docker volume create hermes-lark-validation-installs >/dev/null
 "${compose[@]}" build gateway
+"${compose[@]}" run --rm --no-deps --user 0 --entrypoint chown gateway \
+  "$(id -u):$(id -g)" /opt/data/installs
 "${compose[@]}" run --rm --no-deps \
   --user "$(id -u):$(id -g)" \
   --entrypoint /opt/hermes/.venv/bin/python gateway \
   /opt/hermes-lark/tests/e2e/configure_gateway.py
+# Resolve the plugin's dependencies through Hermes' package manager, as
+# enabling a directory plugin does for a production install.
+"${compose[@]}" run --rm --no-deps \
+  --user "$(id -u):$(id -g)" \
+  --entrypoint /opt/hermes/.venv/bin/hermes gateway \
+  pm install --extra feishu
 
 up_started=1
 "${compose[@]}" up -d --wait --wait-timeout 60 --force-recreate gateway

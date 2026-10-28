@@ -212,7 +212,7 @@ class MediaRetryTests(unittest.TestCase):
             return_value=ClientContext()
         )
         base = sys.modules["gateway.platforms.base"]
-        base._ssrf_redirect_guard = Mock()
+        base.ssrf_redirect_guard = Mock()
 
         with (
             patch.dict(sys.modules, {"tools.url_safety": url_safety}),
@@ -281,7 +281,7 @@ class MediaRetryTests(unittest.TestCase):
         url_safety = types.ModuleType("tools.url_safety")
         url_safety.is_safe_url = Mock(return_value=True)
         base = sys.modules["gateway.platforms.base"]
-        base._ssrf_redirect_guard = Mock()
+        base.ssrf_redirect_guard = Mock()
 
         for response in (
             Response("5", [b"must-not-read"]),
