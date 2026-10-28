@@ -321,8 +321,9 @@ Install development dependencies and run the offline suite:
 ```bash
 git clone --filter=blob:none https://github.com/NousResearch/hermes-agent.git ../hermes-agent
 git -C ../hermes-agent checkout --detach bf0203a794a07aac3ff764972ab9087baa4e4f4e
-python -m pip install -e '../hermes-agent[feishu]'
-python -m pip install -e . -r requirements-dev.txt
+uv sync --frozen --extra feishu --project ../hermes-agent
+. ../hermes-agent/.venv/bin/activate
+uv pip install -e . -r requirements-dev.txt
 python -m ruff check .
 python scripts/check_english.py
 python scripts/check_project.py
