@@ -1,13 +1,11 @@
-ARG HERMES_AGENT_IMAGE=nousresearch/hermes-agent@sha256:f59eb17c55f90409bb805525b7c2bd12dcd61355ebd3d2604272bed5dc597b67
+ARG HERMES_AGENT_IMAGE=nousresearch/hermes-agent@sha256:9c5561579f3ffdf333401797094ac3a743738d6c25d40f4331c7bf77b694238d
 FROM ${HERMES_AGENT_IMAGE}
 
 COPY --chown=hermes:hermes . /opt/hermes-lark
 
-RUN uv pip install \
-      --no-cache \
-      --python /opt/hermes/.venv/bin/python \
-      /opt/hermes-lark \
-    && uv pip check \
-      --python /opt/hermes/.venv/bin/python \
+# Hermes Agent seals its own venv. tests/e2e/configure_gateway.py installs this
+# checkout as a directory plugin and Hermes' package manager prepares its
+# dependencies, the same path a production install takes.
+RUN cd /opt/hermes \
     && /opt/hermes/.venv/bin/python -c \
-      "from importlib.metadata import entry_points, version; expected={'hermes-agent':'0.19.1','hermes-lark':'1.0.0'}; assert {name: version(name) for name in expected} == expected; assert {ep.name: ep.value for ep in entry_points(group='hermes_agent.plugins')}['platforms/feishu'] == 'hermes_lark'"
+      "import pathlib, tomllib, hermes_yaml; from hermes_cli.plugins_manifest import requires_hermes_error; expected={'hermes-lark':'1.0.0'}; root=pathlib.Path('/opt/hermes-lark'); manifest=hermes_yaml.safe_load((root / 'plugin.yaml').read_text()); project=tomllib.loads((root / 'pyproject.toml').read_text())['project']; assert {'hermes-lark': project['version']} == expected == {'hermes-lark': str(manifest['version'])}; assert requires_hermes_error(manifest) is None, requires_hermes_error(manifest)"

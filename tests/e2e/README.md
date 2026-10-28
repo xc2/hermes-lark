@@ -126,6 +126,12 @@ switches.
 ## Persistent credentials
 
 Only Docker is required on the host; Hermes does not need to be installed.
+The runner installs this checkout as the `feishu-platform` directory plugin and
+lets Hermes' package manager resolve its dependencies, as a production install
+does. Those dependency environments live in the
+`hermes-lark-validation-installs` Docker volume, which is case-sensitive even on
+macOS and is reused across runs; remove it with
+`docker volume rm hermes-lark-validation-installs` to force a fresh resolve.
 Store the stable test app credentials in the repository-root `.env`, separate
 from the rebuildable `.hermes-validation/` directory:
 

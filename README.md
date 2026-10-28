@@ -279,18 +279,27 @@ DM-only or diagnostics-only restriction.
 
 ## Docker validation
 
-The validation image pins Hermes Agent 0.19.1. A host installation of Hermes is
-not required:
+The validation image pins Hermes Agent 0.22.5. A host installation of Hermes is
+not required. The configuration step installs this checkout as the
+`feishu-platform` directory plugin, and Hermes' package manager resolves its
+dependencies into the `hermes-lark-validation-installs` Docker volume:
 
 ```bash
 cp .env.example .env
 chmod 600 .env
+mkdir -p .hermes-validation .hermes-secrets
+chmod 700 .hermes-validation .hermes-secrets
 docker compose -f compose.validation.yaml build
+docker compose -f compose.validation.yaml run --rm --no-deps --user 0 \
+  --entrypoint chown gateway "$(id -u):$(id -g)" /opt/data/installs
 docker compose -f compose.validation.yaml run --rm --no-deps \
+  --user "$(id -u):$(id -g)" \
   --entrypoint /opt/hermes/.venv/bin/python gateway \
   /opt/hermes-lark/tests/e2e/configure_gateway.py
-docker compose -f compose.validation.yaml run --rm gateway \
-  plugins list --plain --no-bundled
+docker compose -f compose.validation.yaml run --rm --no-deps \
+  --user "$(id -u):$(id -g)" \
+  --entrypoint /opt/hermes/.venv/bin/hermes gateway \
+  pm install --extra feishu
 ```
 
 The credentialed E2E suite requires a dedicated test application and a user
