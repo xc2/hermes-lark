@@ -5379,7 +5379,19 @@ class FeishuAdapter(BasePlatformAdapter):
         )
         cardkit_result = None
         if cardkit_state is not None and isinstance(metadata, dict):
-            if metadata.get("expect_edits"):
+            if metadata.get("expect_edits") or (
+                # Hermes 0.22 closes a stream segment at a tool boundary with
+                # a first send that carries notify instead of expect_edits.
+                # Only the stream consumer stamps reply_to_message_id; before
+                # the turn ends that send is still this card's streamed answer.
+                metadata.get("notify")
+                and metadata.get("reply_to_message_id")
+                and bool(str(reply_to or "").strip())
+                and not getattr(cardkit_state, "turn_terminal", False)
+                and not getattr(cardkit_state, "command_origin", False)
+                and not getattr(cardkit_state, "closed", False)
+                and not getattr(cardkit_state, "unavailable", False)
+            ):
                 cardkit_result = await self._stream_cardkit_content(
                     cardkit_state,
                     formatted,
@@ -9850,7 +9862,13 @@ class FeishuAdapter(BasePlatformAdapter):
             str(getattr(source, "thread_id", "") or ""),
         )
         busy_handler = getattr(self, "_busy_session_handler", None)
-        busy_owner = getattr(busy_handler, "__self__", None)
+        # Hermes 0.22 installs a scoped closure as the busy handler, so the
+        # runner is only reachable through the adapter's gateway_runner link.
+        busy_owner = getattr(self, "gateway_runner", None) or getattr(
+            busy_handler,
+            "__self__",
+            None,
+        )
         silent_steer_session_key = ""
         if (
             cardkit_state is not None
