@@ -1,7 +1,7 @@
 # hermes-lark
 
 [![CI](https://github.com/xc2/hermes-lark/actions/workflows/ci.yml/badge.svg)](https://github.com/xc2/hermes-lark/actions/workflows/ci.yml)
-[![Python 3.11-3.13](https://img.shields.io/badge/python-3.11--3.13-blue.svg)](https://www.python.org/)
+[![Python 3.14](https://img.shields.io/badge/python-3.14-blue.svg)](https://www.python.org/)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green.svg)](https://github.com/xc2/hermes-lark/blob/main/LICENSE)
 
 `hermes-lark` is an independent Feishu/Lark platform plugin for
@@ -43,8 +43,8 @@ The current compatibility baseline is
 
 ## Requirements
 
-- Python 3.11 through 3.13
-- Hermes Agent `>=0.19.1,<0.20.0`
+- Python 3.14, the interpreter Hermes Agent 0.22 runs on
+- Hermes Agent 0.22.5 or newer (`requires_hermes` in `plugin.yaml`)
 - Node.js 22 or newer
 - A published Feishu or Lark self-built application with bot capability
 
@@ -68,7 +68,7 @@ hermes gateway restart
 For an editable development checkout, replace the install command with:
 
 ```bash
-python -m pip install -e '.[dev]'
+python -m pip install -e . -r requirements-dev.txt
 ```
 
 Confirm that Hermes loads `platforms/feishu` from this package rather than its
@@ -310,9 +310,9 @@ Install development dependencies and run the offline suite:
 
 ```bash
 git clone --filter=blob:none https://github.com/NousResearch/hermes-agent.git ../hermes-agent
-git -C ../hermes-agent checkout --detach cc4cab2f592e60a197e796506de9168f74baf3ea
-python -m pip install -e ../hermes-agent
-python -m pip install -e '.[dev]'
+git -C ../hermes-agent checkout --detach bf0203a794a07aac3ff764972ab9087baa4e4f4e
+python -m pip install -e '../hermes-agent[feishu]'
+python -m pip install -e . -r requirements-dev.txt
 python -m ruff check .
 python scripts/check_english.py
 python scripts/check_project.py

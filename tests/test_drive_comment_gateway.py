@@ -293,7 +293,7 @@ class DriveCommentGatewayTests(unittest.IsolatedAsyncioTestCase):
             )
         )
         self.assertEqual(
-            gateway_event.metadata["feishu_drive_comment"]["sender_open_id"],
+            gateway_event._feishu_metadata["feishu_drive_comment"]["sender_open_id"],
             "ou_user",
         )
 
@@ -414,7 +414,7 @@ class DriveCommentGatewayTests(unittest.IsolatedAsyncioTestCase):
             ),
             message_id="reply_1",
             reply_to_message_id=None,
-            metadata={
+            _feishu_metadata={
                 "feishu_drive_comment": {
                     "reply_id": "reply_1",
                     "sender_open_id": "ou_user",

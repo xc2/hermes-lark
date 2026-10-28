@@ -7,7 +7,9 @@ name = "hermes-lark"
 version = "1.0.0"
 description = "Feishu/Lark platform plugin for Hermes Agent"
 readme = "README.md"
-requires-python = ">=3.11,<3.14"
+# Hermes Agent locks plugins into one uv workspace and intersects every
+# member's requires-python, so an upper bound here breaks its lock.
+requires-python = ">=3.11"
 license = "MIT"
 license-files = ["LICENSE", "NOTICE"]
 authors = [
@@ -20,26 +22,21 @@ classifiers = [
   "License :: OSI Approved :: MIT License",
   "Operating System :: OS Independent",
   "Programming Language :: Python :: 3",
-  "Programming Language :: Python :: 3.11",
-  "Programming Language :: Python :: 3.12",
-  "Programming Language :: Python :: 3.13",
+  "Programming Language :: Python :: 3.14",
   "Topic :: Communications :: Chat",
 ]
+# Ranges, not pins: Hermes Agent resolves these together with its own exact
+# pins, so the floors are the versions Hermes Agent 0.22.5 locks. The supported
+# Hermes release is declared by requires_hermes in plugin.yaml; a hermes-agent
+# requirement would be dropped by Hermes and cannot match its 0.0.0 metadata.
+# Development tools live in requirements-dev.txt so they stay out of the
+# Hermes dependency environment.
 dependencies = [
-  "hermes-agent>=0.19.1,<0.20.0",
-  "aiohttp==3.14.3",
-  "lark-oapi==1.7.1",
-  "qrcode==8.2",
-  "requests-toolbelt==1.0.0",
-  "websockets==15.0.1",
-]
-
-[project.optional-dependencies]
-dev = [
-  "build>=1.2,<2",
-  "PyYAML>=6,<7",
-  "ruff>=0.9,<1",
-  "twine>=6,<7",
+  "aiohttp>=3.14.5,<4",
+  "lark-oapi>=1.6.8,<2",
+  "qrcode>=7.4.2,<9",
+  "requests-toolbelt>=1.0.0,<2",
+  "websockets>=15.0.1,<16",
 ]
 
 [project.urls]
@@ -71,6 +68,7 @@ include = [
   "/permissions",
   "/plugin.yaml",
   "/pyproject.toml",
+  "/requirements-dev.txt",
   "/scripts",
   "/skills",
   "/tests",

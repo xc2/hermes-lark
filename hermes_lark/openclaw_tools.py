@@ -233,7 +233,7 @@ def ticket_from_event(event: Any, session_id: str = "") -> ToolTicket:
     inviter_id = _read_value(inviter, "id") or inviter
     transport_ref = _read_value(source, "_transport_adapter_ref")
     transport_adapter = transport_ref() if callable(transport_ref) else None
-    metadata = _read_value(event, "metadata") or {}
+    metadata = _read_value(event, "_feishu_metadata", "metadata") or {}
     comment_metadata = (
         _read_value(metadata, "feishu_drive_comment", "feishuDriveComment")
         or {}

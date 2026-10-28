@@ -164,7 +164,8 @@ from gateway.platforms.base import (
     cache_audio_from_bytes,
     cache_image_from_bytes,
 )
-from gateway.status import acquire_scoped_lock, release_scoped_lock
+from gateway.status import acquire_scoped_lock
+from gateway.status_scoped_locks import release_scoped_lock
 from hermes_constants import get_hermes_home
 from utils import atomic_json_write, env_float, env_int
 
@@ -780,6 +781,17 @@ def _is_conversation_stop_intent(text: str) -> bool:
         phrase in normalized
         for phrase in _CONVERSATION_STOP_INTENT_PHRASES
     )
+
+
+# Hermes durable admission refuses inbound events whose ``metadata`` it does
+# not own, so Feishu-private per-message state rides on this attribute instead.
+FEISHU_METADATA_ATTR = "_feishu_metadata"
+
+
+def _feishu_metadata(event: Any) -> Dict[str, Any]:
+    """Return the Feishu-private metadata attached to one inbound event."""
+    metadata = getattr(event, FEISHU_METADATA_ATTR, None)
+    return metadata if isinstance(metadata, dict) else {}
 
 
 def _sender_identity(sender: Any) -> frozenset:
@@ -1988,91 +2000,126 @@ def _run_official_feishu_ws_client(ws_client: Any, adapter: Any) -> None:
         adapter._ws_thread_loop = None
 
 
-def check_feishu_requirements() -> bool:
-    """Check if Feishu/Lark dependencies are available.
+def _import_lark_oapi() -> Dict[str, Any]:
+    """Import the Feishu SDK names this module binds at load time."""
+    import lark_oapi as lark
+    from lark_oapi.api.application.v6 import GetApplicationRequest
+    from lark_oapi.api.cardkit.v1 import (
+        Card,
+        ContentCardElementRequest,
+        ContentCardElementRequestBody,
+        CreateCardRequest,
+        CreateCardRequestBody,
+        SettingsCardRequest,
+        SettingsCardRequestBody,
+        UpdateCardRequest,
+        UpdateCardRequestBody,
+    )
+    from lark_oapi.api.im.v1 import (
+        CreateFileRequest, CreateFileRequestBody,
+        CreateImageRequest, CreateImageRequestBody,
+        CreateMessageRequest, CreateMessageRequestBody,
+        GetChatRequest, GetMessageRequest, GetMessageResourceRequest,
+        ListMessageRequest,
+        P2ImMessageMessageReadV1,
+        ReplyMessageRequest, ReplyMessageRequestBody,
+        UpdateMessageRequest, UpdateMessageRequestBody,
+    )
+    from lark_oapi.core import AccessTokenType, HttpMethod
+    from lark_oapi.core.const import FEISHU_DOMAIN, LARK_DOMAIN
+    from lark_oapi.core.model import BaseRequest
+    from lark_oapi.core.utils import AESCipher
+    from lark_oapi.event.callback.model.p2_card_action_trigger import (
+        CallBackCard, CallBackToast, P2CardActionTriggerResponse,
+    )
+    from lark_oapi.event.dispatcher_handler import EventDispatcherHandler
+    from lark_oapi.ws import Client as FeishuWSClient
+    return {
+        "lark": lark,
+        "GetApplicationRequest": GetApplicationRequest,
+        "Card": Card,
+        "ContentCardElementRequest": ContentCardElementRequest,
+        "ContentCardElementRequestBody": ContentCardElementRequestBody,
+        "CreateCardRequest": CreateCardRequest,
+        "CreateCardRequestBody": CreateCardRequestBody,
+        "SettingsCardRequest": SettingsCardRequest,
+        "SettingsCardRequestBody": SettingsCardRequestBody,
+        "UpdateCardRequest": UpdateCardRequest,
+        "UpdateCardRequestBody": UpdateCardRequestBody,
+        "CreateFileRequest": CreateFileRequest,
+        "CreateFileRequestBody": CreateFileRequestBody,
+        "CreateImageRequest": CreateImageRequest,
+        "CreateImageRequestBody": CreateImageRequestBody,
+        "CreateMessageRequest": CreateMessageRequest,
+        "CreateMessageRequestBody": CreateMessageRequestBody,
+        "GetChatRequest": GetChatRequest,
+        "GetMessageRequest": GetMessageRequest,
+        "GetMessageResourceRequest": GetMessageResourceRequest,
+        "ListMessageRequest": ListMessageRequest,
+        "P2ImMessageMessageReadV1": P2ImMessageMessageReadV1,
+        "ReplyMessageRequest": ReplyMessageRequest,
+        "ReplyMessageRequestBody": ReplyMessageRequestBody,
+        "UpdateMessageRequest": UpdateMessageRequest,
+        "UpdateMessageRequestBody": UpdateMessageRequestBody,
+        "AccessTokenType": AccessTokenType,
+        "HttpMethod": HttpMethod,
+        "FEISHU_DOMAIN": FEISHU_DOMAIN,
+        "LARK_DOMAIN": LARK_DOMAIN,
+        "BaseRequest": BaseRequest,
+        "AESCipher": AESCipher,
+        "CallBackCard": CallBackCard,
+        "CallBackToast": CallBackToast,
+        "P2CardActionTriggerResponse": P2CardActionTriggerResponse,
+        "EventDispatcherHandler": EventDispatcherHandler,
+        "FeishuWSClient": FeishuWSClient,
+        "FEISHU_AVAILABLE": True,
+    }
 
-    Lazy-installs lark-oapi via ``tools.lazy_deps.ensure("platform.feishu")``
-    on first call if not present. Rebinds all module-level globals on success.
+
+def _bind_lark_oapi() -> bool:
+    """Bind the Feishu SDK into this module when it was installed after import."""
+    if FEISHU_AVAILABLE:
+        return True
+    try:
+        bindings = _import_lark_oapi()
+    except ImportError:
+        return False
+    globals().update(bindings)
+    return True
+
+
+def feishu_deps_present() -> bool:
+    """Passive registry ``check_fn``: report whether lark-oapi is importable.
+
+    Hermes calls this from status displays and config loading, so it must
+    never install anything. ``check_feishu_requirements`` is the installer.
     """
     if FEISHU_AVAILABLE:
         return True
+    try:
+        from pm import available
 
-    def _import():
-        import lark_oapi as lark
-        from lark_oapi.api.application.v6 import GetApplicationRequest
-        from lark_oapi.api.cardkit.v1 import (
-            Card,
-            ContentCardElementRequest,
-            ContentCardElementRequestBody,
-            CreateCardRequest,
-            CreateCardRequestBody,
-            SettingsCardRequest,
-            SettingsCardRequestBody,
-            UpdateCardRequest,
-            UpdateCardRequestBody,
-        )
-        from lark_oapi.api.im.v1 import (
-            CreateFileRequest, CreateFileRequestBody,
-            CreateImageRequest, CreateImageRequestBody,
-            CreateMessageRequest, CreateMessageRequestBody,
-            GetChatRequest, GetMessageRequest, GetMessageResourceRequest,
-            ListMessageRequest,
-            P2ImMessageMessageReadV1,
-            ReplyMessageRequest, ReplyMessageRequestBody,
-            UpdateMessageRequest, UpdateMessageRequestBody,
-        )
-        from lark_oapi.core import AccessTokenType, HttpMethod
-        from lark_oapi.core.const import FEISHU_DOMAIN, LARK_DOMAIN
-        from lark_oapi.core.model import BaseRequest
-        from lark_oapi.core.utils import AESCipher
-        from lark_oapi.event.callback.model.p2_card_action_trigger import (
-            CallBackCard, CallBackToast, P2CardActionTriggerResponse,
-        )
-        from lark_oapi.event.dispatcher_handler import EventDispatcherHandler
-        from lark_oapi.ws import Client as FeishuWSClient
-        return {
-            "lark": lark,
-            "GetApplicationRequest": GetApplicationRequest,
-            "Card": Card,
-            "ContentCardElementRequest": ContentCardElementRequest,
-            "ContentCardElementRequestBody": ContentCardElementRequestBody,
-            "CreateCardRequest": CreateCardRequest,
-            "CreateCardRequestBody": CreateCardRequestBody,
-            "SettingsCardRequest": SettingsCardRequest,
-            "SettingsCardRequestBody": SettingsCardRequestBody,
-            "UpdateCardRequest": UpdateCardRequest,
-            "UpdateCardRequestBody": UpdateCardRequestBody,
-            "CreateFileRequest": CreateFileRequest,
-            "CreateFileRequestBody": CreateFileRequestBody,
-            "CreateImageRequest": CreateImageRequest,
-            "CreateImageRequestBody": CreateImageRequestBody,
-            "CreateMessageRequest": CreateMessageRequest,
-            "CreateMessageRequestBody": CreateMessageRequestBody,
-            "GetChatRequest": GetChatRequest,
-            "GetMessageRequest": GetMessageRequest,
-            "GetMessageResourceRequest": GetMessageResourceRequest,
-            "ListMessageRequest": ListMessageRequest,
-            "P2ImMessageMessageReadV1": P2ImMessageMessageReadV1,
-            "ReplyMessageRequest": ReplyMessageRequest,
-            "ReplyMessageRequestBody": ReplyMessageRequestBody,
-            "UpdateMessageRequest": UpdateMessageRequest,
-            "UpdateMessageRequestBody": UpdateMessageRequestBody,
-            "AccessTokenType": AccessTokenType,
-            "HttpMethod": HttpMethod,
-            "FEISHU_DOMAIN": FEISHU_DOMAIN,
-            "LARK_DOMAIN": LARK_DOMAIN,
-            "BaseRequest": BaseRequest,
-            "AESCipher": AESCipher,
-            "CallBackCard": CallBackCard,
-            "CallBackToast": CallBackToast,
-            "P2CardActionTriggerResponse": P2CardActionTriggerResponse,
-            "EventDispatcherHandler": EventDispatcherHandler,
-            "FeishuWSClient": FeishuWSClient,
-            "FEISHU_AVAILABLE": True,
-        }
+        return bool(available("feishu"))
+    except Exception:
+        return False
 
-    from tools.lazy_deps import ensure_and_bind
-    return ensure_and_bind("platform.feishu", _import, globals(), prompt=False)
+
+def check_feishu_requirements() -> bool:
+    """Active registry ``ensure_deps_fn``: install and bind lark-oapi.
+
+    Hermes calls this from ``create_adapter()`` only when ``check_fn`` reports
+    the SDK missing, right before the enabled platform connects.
+    """
+    if FEISHU_AVAILABLE:
+        return True
+    try:
+        from pm import ensure_import
+
+        ensure_import("feishu")
+    except Exception as exc:
+        logger.warning("[Feishu] lark-oapi is unavailable: %s", exc)
+        return False
+    return _bind_lark_oapi()
 
 
 class FeishuAdapter(BasePlatformAdapter):
@@ -2173,6 +2220,7 @@ class FeishuAdapter(BasePlatformAdapter):
         self._sent_message_ids_to_chat: Dict[str, str] = {}  # message_id → chat_id (for reaction routing)
         self._sent_message_id_order: List[str] = []  # LRU order for _sent_message_ids_to_chat
         self._thread_routes_by_message: "OrderedDict[str, str]" = OrderedDict()
+        self._admission_tickets_by_message: "OrderedDict[str, Any]" = OrderedDict()
         self._interactive_operators_by_message: "OrderedDict[str, str]" = OrderedDict()
         self._interactive_operators_by_route: "OrderedDict[tuple[str, str], str]" = OrderedDict()
         self._chat_info_cache: Dict[str, Dict[str, Any]] = {}
@@ -2753,7 +2801,7 @@ class FeishuAdapter(BasePlatformAdapter):
         # A fresh connect (or reconnect) re-arms the SDK executor after a prior
         # disconnect set the closing flag.
         self._sdk_executor_closing = False
-        if not FEISHU_AVAILABLE:
+        if not _bind_lark_oapi():
             logger.error("[Feishu] lark-oapi not installed")
             return False
         if not self._app_id or not self._app_secret:
@@ -5584,6 +5632,11 @@ class FeishuAdapter(BasePlatformAdapter):
     _EA_REASON_LABEL = "**Reason:** "
     _EA_SMART_DENY_LINE = "\n\n**Smart DENY:** owner override applies to this one operation only."
     _EA_CMD_BUDGET = 3000
+
+    @classmethod
+    def supports_exec_approval_buttons(cls) -> bool:
+        """Report the native approval card ``send_exec_approval`` renders."""
+        return True
 
     async def send_exec_approval(
         self, chat_id: str, command: str, session_key: str,
@@ -9789,6 +9842,7 @@ class FeishuAdapter(BasePlatformAdapter):
         Per-chat lock ensures messages in the same chat are processed one at a
         time (matches openclaw's createChatQueue serial queue behaviour).
         """
+        self._remember_admission_ticket(event)
         source = getattr(event, "source", None)
         event_message_id = str(getattr(event, "message_id", "") or "")
         cardkit_state = self._known_cardkit_state_for_route(
@@ -9994,7 +10048,7 @@ class FeishuAdapter(BasePlatformAdapter):
         return self._pending_processing_reactions.pop(message_id, None)
 
     async def on_processing_start(self, event: MessageEvent) -> None:
-        metadata = getattr(event, "metadata", None)
+        metadata = _feishu_metadata(event)
         peer = (
             metadata.get("feishu_bot_peer")
             if isinstance(metadata, dict)
@@ -10106,7 +10160,7 @@ class FeishuAdapter(BasePlatformAdapter):
         self, event: MessageEvent, outcome: ProcessingOutcome
     ) -> None:
         _BOT_PEER_TURN_CONTEXT.set(None)
-        metadata = getattr(event, "metadata", None)
+        metadata = _feishu_metadata(event)
         source = getattr(event, "source", None)
         comment_target = self._drive_comment_target(
             (
@@ -10650,14 +10704,15 @@ class FeishuAdapter(BasePlatformAdapter):
             ),
             timestamp=datetime.now(),
         )
-        normalized.metadata = (
+        feishu_metadata: Dict[str, Any] = (
             {"feishu_bot_peer": bot_peer}
             if bot_peer is not None
             else {}
         )
-        normalized.metadata["feishu_session_thread_id"] = session_thread_id
+        feishu_metadata["feishu_session_thread_id"] = session_thread_id
         if native_thread_id:
-            normalized.metadata["feishu_thread_id"] = native_thread_id
+            feishu_metadata["feishu_thread_id"] = native_thread_id
+        setattr(normalized, FEISHU_METADATA_ATTR, feishu_metadata)
         self._remember_thread_route(message_id, session_thread_id)
         if chat_type != "p2p":
             self._apply_pending_group_history(
@@ -10712,12 +10767,8 @@ class FeishuAdapter(BasePlatformAdapter):
             and existing.reply_to_text == incoming.reply_to_text
             and existing.source.thread_id == incoming.source.thread_id
             and (
-                (getattr(existing, "metadata", None) or {}).get(
-                    "feishu_bot_peer"
-                )
-                == (getattr(incoming, "metadata", None) or {}).get(
-                    "feishu_bot_peer"
-                )
+                _feishu_metadata(existing).get("feishu_bot_peer")
+                == _feishu_metadata(incoming).get("feishu_bot_peer")
             )
         )
 
@@ -10841,7 +10892,7 @@ class FeishuAdapter(BasePlatformAdapter):
         default_ext: str,
         preferred_name: str,
     ) -> tuple[str, str]:
-        from gateway.platforms.base import _ssrf_redirect_guard
+        from gateway.platforms.base import ssrf_redirect_guard
         from tools.url_safety import create_ssrf_safe_async_client, is_safe_url
 
         if not is_safe_url(file_url):
@@ -10860,7 +10911,7 @@ class FeishuAdapter(BasePlatformAdapter):
         async with create_ssrf_safe_async_client(
             timeout=30.0,
             follow_redirects=True,
-            event_hooks={"response": [_ssrf_redirect_guard]},
+            event_hooks={"response": [ssrf_redirect_guard]},
         ) as client:
             async def fetch() -> tuple[str, bytes]:
                 async with client.stream(
@@ -11176,12 +11227,8 @@ class FeishuAdapter(BasePlatformAdapter):
             and existing.reply_to_text == incoming.reply_to_text
             and existing.source.thread_id == incoming.source.thread_id
             and (
-                (getattr(existing, "metadata", None) or {}).get(
-                    "feishu_bot_peer"
-                )
-                == (getattr(incoming, "metadata", None) or {}).get(
-                    "feishu_bot_peer"
-                )
+                _feishu_metadata(existing).get("feishu_bot_peer")
+                == _feishu_metadata(incoming).get("feishu_bot_peer")
             )
         )
 
@@ -12586,6 +12633,86 @@ class FeishuAdapter(BasePlatformAdapter):
             return True
         return self._dm_policy in {"open", "allowlist"}
 
+    def _remember_admission_ticket(self, event: Any) -> None:
+        """Keep one inbound sender's Feishu IDs for Hermes' durable re-checks.
+
+        Hermes snapshots an admitted turn without the raw Feishu payload, so
+        the open ID that allowlists match is gone by the time it asks
+        ``reauthorize_native_roles`` to confirm the grant.
+        """
+        message_id = str(getattr(event, "message_id", "") or "").strip()
+        if not message_id:
+            return
+        from .openclaw_tools import ticket_from_event
+
+        try:
+            ticket = ticket_from_event(event)
+        except Exception:
+            logger.debug("[Feishu] Could not capture admission identity", exc_info=True)
+            return
+        tickets = getattr(self, "_admission_tickets_by_message", None)
+        if tickets is None:
+            tickets = OrderedDict()
+            self._admission_tickets_by_message = tickets
+        tickets.pop(message_id, None)
+        tickets[message_id] = ticket
+        max_entries = max(1, int(getattr(self, "_dedup_cache_size", 5000)))
+        while len(tickets) > max_entries:
+            tickets.popitem(last=False)
+
+    async def reauthorize_native_roles(self, source: Any) -> bool:
+        """Re-check a durable ``role_authorized`` grant against current policy.
+
+        Hermes replays admitted turns from a snapshot and asks the adapter to
+        confirm the role grant instead of trusting the stored flag. This
+        repeats the sender gate behind ``_role_authorized_for_admitted_message``
+        without the per-message mention check, which admission already passed.
+        """
+        tickets = getattr(self, "_admission_tickets_by_message", None) or {}
+        ticket = tickets.get(str(getattr(source, "message_id", "") or ""))
+        if ticket is not None:
+            sender_id = SimpleNamespace(
+                open_id=ticket.sender_open_id or None,
+                user_id=ticket.sender_user_id or None,
+                union_id=ticket.sender_union_id or None,
+            )
+            chat_id = str(ticket.chat_id or "")
+        else:
+            # A turn recovered after a restart has only the snapshot's IDs.
+            primary_id = str(getattr(source, "user_id", "") or "").split("::")[-1]
+            sender_id = SimpleNamespace(
+                open_id=primary_id if primary_id.startswith("ou_") else None,
+                user_id=primary_id or None,
+                union_id=getattr(source, "user_id_alt", None) or None,
+            )
+            chat_id = str(
+                getattr(source, "chat_id_alt", "")
+                or getattr(source, "chat_id", "")
+                or ""
+            ).split("::")[-1]
+        if not _sender_identity(SimpleNamespace(sender_id=sender_id)):
+            return False
+        is_bot = bool(getattr(source, "is_bot", False))
+        sender = SimpleNamespace(
+            sender_type="bot" if is_bot else "user",
+            sender_id=sender_id,
+        )
+        if str(getattr(source, "chat_type", "") or "") == "dm":
+            if self._dm_policy not in {"open", "allowlist"}:
+                return False
+            admission_message = SimpleNamespace(
+                chat_id=chat_id,
+                chat_type="p2p",
+                mentions=[],
+            )
+            return self._admit(sender, admission_message) is None
+        if is_bot:
+            rule = self._group_rule_for(chat_id)
+            mode = rule.allow_bots if rule and rule.allow_bots else self._allow_bots
+            if mode not in {"mentions", "all"}:
+                return False
+        return self._allow_group_message(sender_id, chat_id, is_bot=is_bot)
+
     def _admit_synthetic_user_action(
         self,
         sender_id: Any,
@@ -13940,7 +14067,7 @@ async def _standalone_send(
     FeishuAdapter, hydrates its lark client, and sends text + native media
     (images, video, voice, documents). Replaces the legacy _send_feishu helper.
     """
-    if not FEISHU_AVAILABLE:
+    if not _bind_lark_oapi():
         return {"error": "Feishu dependencies not installed. Run `hermes setup` to install Feishu support."}
 
     media_files = media_files or []
@@ -14237,6 +14364,58 @@ def _apply_yaml_config(yaml_cfg: dict, feishu_cfg: dict) -> dict | None:
     return normalized or None
 
 
+_ENV_ENABLE_CREDENTIALS = ("FEISHU_APP_ID", "FEISHU_APP_SECRET")
+
+# Hermes core dropped its built-in Feishu prompt hint and send-target rules
+# once Feishu became a platform plugin, so the replacement entry declares both.
+_PLATFORM_HINT = (
+    "You are in a Feishu (Lark) workspace communicating with your user. "
+    "Feishu renders Markdown in messages: bold, italic, code blocks, and links "
+    "are supported. You can send media files natively: include "
+    "MEDIA:/absolute/path/to/file in your response. Images (.jpg, .png, .webp) "
+    "are uploaded and displayed inline, Opus audio (.opus, .ogg) is sent as a "
+    "voice message, and other files, including other audio formats, are sent "
+    "as attachments."
+)
+# Chat (oc_) or open (ou_) IDs, optionally account-scoped ("account::oc_...")
+# and followed by ":<thread root message ID>".
+_SEND_TARGET_RE = re.compile(
+    r"\s*((?:[^:\s]+::)?o[cu]_[A-Za-z0-9_-]+)(?::([A-Za-z0-9_-]+))?\s*"
+)
+
+
+def _env_enablement() -> Optional[dict]:
+    """Seed ``PlatformConfig.extra`` from env so an env-only setup is enabled.
+
+    Hermes core stopped reading ``FEISHU_*`` itself once Feishu became a
+    platform plugin; a plugin that replaces the bundled entry must declare
+    the env bridge it relies on.
+    """
+    from gateway.platforms._shared import get_scoped_secret, seed_extra_from_env
+
+    if not all(
+        str(get_scoped_secret(name, "") or "").strip()
+        for name in _ENV_ENABLE_CREDENTIALS
+    ):
+        return None
+    seed = seed_extra_from_env(
+        (
+            ("FEISHU_APP_ID", "app_id", None),
+            ("FEISHU_APP_SECRET", "app_secret", None),
+            ("FEISHU_DOMAIN", "domain", None),
+            ("FEISHU_CONNECTION_MODE", "connection_mode", None),
+            ("FEISHU_ENCRYPT_KEY", "encrypt_key", None),
+            ("FEISHU_VERIFICATION_TOKEN", "verification_token", None),
+        ),
+        home_env="FEISHU_HOME_CHANNEL",
+    )
+    home = seed.get("home_channel")
+    thread_id = str(get_scoped_secret("FEISHU_HOME_CHANNEL_THREAD_ID", "") or "").strip()
+    if isinstance(home, dict) and thread_id:
+        home["thread_id"] = thread_id
+    return seed
+
+
 def _is_connected(config) -> bool:
     """Feishu is connected when app_id is configured. Mirrors the legacy
     _PLATFORM_CONNECTED_CHECKERS[Platform.FEISHU] = lambda cfg: bool(app_id)."""
@@ -14392,23 +14571,32 @@ def _build_adapter(config):
 
 def register(ctx) -> None:
     """Plugin entry point — called by the Hermes plugin system."""
+    from gateway.platforms.send_targets import StandaloneSendPolicy, regex_groups_parser
+
     _install_cardkit_commentary_bridge()
     ctx.register_platform(
         name="feishu",
         label="Feishu / Lark",
         adapter_factory=_build_adapter,
-        check_fn=check_feishu_requirements,
+        check_fn=feishu_deps_present,
+        ensure_deps_fn=check_feishu_requirements,
         is_connected=_is_connected,
         validate_config=_is_connected,
         required_env=["FEISHU_APP_ID", "FEISHU_APP_SECRET"],
         install_hint="Run `hermes setup` to install Feishu support.",
         setup_fn=interactive_setup,
         apply_yaml_config_fn=_apply_yaml_config,
+        env_enablement_fn=_env_enablement,
+        env_enable_credentials=_ENV_ENABLE_CREDENTIALS,
         allowed_users_env="FEISHU_ALLOWED_USERS",
         allow_all_env="FEISHU_ALLOW_ALL_USERS",
         cron_deliver_env_var="FEISHU_HOME_CHANNEL",
         standalone_sender_fn=_standalone_send,
+        target_ref_syntax_fn=regex_groups_parser(_SEND_TARGET_RE),
+        standalone_send=StandaloneSendPolicy(label="Feishu", media=True, text_direct=True),
         max_message_length=_DEFAULT_TEXT_CHUNK_LIMIT,
         emoji="🪽",
         allow_update_command=True,
+        platform_hint=_PLATFORM_HINT,
+        display_tier="medium",
     )

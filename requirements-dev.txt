@@ -1,0 +1,5 @@
+# Development and release tools; not installed into Hermes Agent.
+build>=1.2,<2
+PyYAML>=6,<7
+ruff>=0.9,<1
+twine>=6,<7

@@ -438,7 +438,7 @@ class SyntheticEventAuthorizationTests(unittest.TestCase):
         self.assertEqual(event.source.thread_id, "vc-invited:event:evt_meeting")
         self.assertEqual(event.message_id, "vc-invited:event:evt_meeting")
         self.assertIn('call_id="call-123"', event.text)
-        self.assertEqual(event.metadata["vc_call_id"], "call-123")
+        self.assertEqual(event._feishu_metadata["vc_call_id"], "call-123")
         self.assertEqual(
             adapter._synthetic_vc_targets,
             {"vc-invited:event:evt_meeting": "ou_user"},

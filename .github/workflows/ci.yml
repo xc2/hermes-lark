@@ -22,9 +22,7 @@ jobs:
       fail-fast: false
       matrix:
         python-version:
-          - "3.11"
-          - "3.12"
-          - "3.13"
+          - "3.14"
 
     steps:
       - name: Check out repository
@@ -46,10 +44,10 @@ jobs:
           python -m pip install --upgrade pip
           git init "$RUNNER_TEMP/hermes-agent"
           git -C "$RUNNER_TEMP/hermes-agent" remote add origin https://github.com/NousResearch/hermes-agent.git
-          git -C "$RUNNER_TEMP/hermes-agent" fetch --depth=1 origin cc4cab2f592e60a197e796506de9168f74baf3ea
+          git -C "$RUNNER_TEMP/hermes-agent" fetch --depth=1 origin bf0203a794a07aac3ff764972ab9087baa4e4f4e
           git -C "$RUNNER_TEMP/hermes-agent" checkout --detach FETCH_HEAD
-          python -m pip install -e "$RUNNER_TEMP/hermes-agent"
-          python -m pip install -e '.[dev]'
+          python -m pip install -e "$RUNNER_TEMP/hermes-agent[feishu]"
+          python -m pip install -e . -r requirements-dev.txt
 
       - name: Check repository policy
         run: |

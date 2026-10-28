@@ -18,16 +18,17 @@ By participating, you agree to follow the [Code of Conduct](CODE_OF_CONDUCT.md).
 
 ## Development environment
 
-Supported versions are Python 3.11 through 3.13 and Node.js 22 or newer.
+Supported versions are Python 3.14 (the interpreter Hermes Agent 0.22 runs
+on) and Node.js 22 or newer.
 
 ```bash
 python -m venv .venv
 . .venv/bin/activate
 python -m pip install --upgrade pip
 git clone --filter=blob:none https://github.com/NousResearch/hermes-agent.git ../hermes-agent
-git -C ../hermes-agent checkout --detach cc4cab2f592e60a197e796506de9168f74baf3ea
-python -m pip install -e ../hermes-agent
-python -m pip install -e '.[dev]'
+git -C ../hermes-agent checkout --detach bf0203a794a07aac3ff764972ab9087baa4e4f4e
+python -m pip install -e '../hermes-agent[feishu]'
+python -m pip install -e . -r requirements-dev.txt
 ```
 
 The normal test suite is offline and does not require Feishu credentials:
